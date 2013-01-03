@@ -1429,7 +1429,8 @@ void TWPartitionManager::Update_Partition_Details(int update_size, int *data_siz
 				int backup_display_size = (int)((*iter)->Backup_Size / 1048576LLU);
 				DataManager::SetValue(TW_BACKUP_SYSTEM_SIZE, backup_display_size);
 			} else if ((*iter)->Mount_Point == "/data" || (*iter)->Mount_Point == "/datadata") {
-				*data_size += (int)((*iter)->Backup_Size / 1048576LLU);
+				if(data_size)
+					*data_size += (int)((*iter)->Backup_Size / 1048576LLU);
 			} else if ((*iter)->Mount_Point == "/cache") {
 				int backup_display_size = (int)((*iter)->Backup_Size / 1048576LLU);
 				DataManager::SetValue(TW_BACKUP_CACHE_SIZE, backup_display_size);
@@ -1531,7 +1532,7 @@ void TWPartitionManager::Update_System_Details(void) {
 	// do this twice - first without updating size just to enumerate partitions,
 	// and second to get actual size. This is done because updating free space
 	// takes lot of time and we wanna enumerate as soon as possible
-	Update_Partition_Details(0, &data_size);
+	Update_Partition_Details(0, NULL);
 	Update_Partition_Details(1, &data_size);
 
 	DataManager::SetValue(TW_BACKUP_DATA_SIZE, data_size);
