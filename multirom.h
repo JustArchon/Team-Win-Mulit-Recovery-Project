@@ -80,6 +80,7 @@ public:
 	static bool flashZip(std::string rom, std::string file);
 	static bool injectBoot(std::string img_path);
 	static int copyBoot(std::string& orig, std::string rom);
+	static bool wipe(std::string name, std::string what);
 
 	static config loadConfig();
 	static void saveConfig(const config& cfg);
@@ -89,6 +90,7 @@ public:
 	static std::string listInstallLocations();
 	static void setRomsPath(std::string loc);
 	static bool patchInit(std::string name);
+	static bool disableFlashKernelAct(std::string name, std::string loc);
 
 private:
 	static void findPath();
@@ -102,10 +104,14 @@ private:
 	static bool extractBootForROM(std::string base);
 	static bool installFromBackup(std::string name, std::string path, int type);
 	static bool extractBackupFile(std::string path, std::string part);
+	static int getType(int os, std::string loc);
 
 	static bool ubuntuExtractImage(std::string name, std::string img_path, std::string dest);
 	static bool patchUbuntuInit(std::string rootDir);
 	static bool ubuntuUpdateInitramfs(std::string rootDir);
+	static void setUpChroot(bool start, std::string rootDir);
+	static void ubuntuDisableFlashKernel(bool initChroot, std::string rootDir);
+	static bool mountUbuntuImage(std::string name, std::string& dest);
 
 	static bool createImage(std::string base, const char *img);
 	
@@ -242,6 +248,49 @@ bool MultiROM::erase(std::string name)
 	ui_print("Erasing ROM \"%s\"...\n", name.c_str());
 	std::string cmd = "rm -rf \"" + path + "\"";
 	return system(cmd.c_str()) == 0;
+}
+
+bool MultiROM::wipe(std::string name, std::string what)
+{
+	ui_print("Changing mountpoints...\n");
+	if(!changeMounts(name))
+	{
+		ui_print("Failed to change mountpoints!\n");
+		return false;
+	}
+
+	char cmd[256];
+	bool res = true;
+	if(what == "dalvik")
+	{
+		static const char *dirs[] = {
+			"data/dalvik-cache",
+			"cache/dalvik-cache",
+			"cache/dc",
+		};
+
+		for(uint8_t i = 0; res && i < sizeof(dirs)/sizeof(dirs[0]); ++i)
+		{
+			sprintf(cmd, "rm -rf \"/%s\"", dirs[i]);
+			ui_print("Wiping dalvik: %s...\n", dirs[i]);
+			res = (system(cmd) == 0);
+		}
+	}
+	else
+	{
+		sprintf(cmd, "rm -rf \"/%s/\"*", what.c_str());
+		ui_print("Wiping ROM's /%s...\n", what.c_str());
+		res = (system(cmd) == 0);
+	}
+
+	sync();
+
+	if(!res)
+		ui_print("ERROR: Failed to erase %s!\n", what.c_str());
+
+	ui_print("Restoring mountpoints...\n");
+	restoreMounts();
+	return res;
 }
 
 int MultiROM::getType(std::string name)
@@ -1041,7 +1090,7 @@ bool MultiROM::ubuntuExtractImage(std::string name, std::string img_path, std::s
 	}
 
 	ui_print("Extracting rootfs.tar.gz (will take a while)...\n");
-	sprintf(cmd, "zcat /mnt_ub_img/rootfs.tar.gz | gnutar xm --numeric-owner -C \"%s\"",  dest.c_str());
+	sprintf(cmd, "zcat /mnt_ub_img/rootfs.tar.gz | gnutar x --numeric-owner -C \"%s\"",  dest.c_str());
 	system(cmd);
 
 	sync();
@@ -1083,29 +1132,122 @@ bool MultiROM::patchUbuntuInit(std::string rootDir)
 	return true;
 }
 
-bool MultiROM::ubuntuUpdateInitramfs(std::string rootDir)
+void MultiROM::setUpChroot(bool start, std::string rootDir)
 {
-	ui_print("Updating initramfs\n");
-	
 	char cmd[256];
 	static const char *dirs[] = { "dev", "sys", "proc" };
 	for(size_t i = 0; i < sizeof(dirs)/sizeof(dirs[0]); ++i)
 	{
-		sprintf(cmd, "mount -o bind /%s \"%s/%s\"", dirs[i], rootDir.c_str(), dirs[i]);
+		if(start)
+			sprintf(cmd, "mount -o bind /%s \"%s/%s\"", dirs[i], rootDir.c_str(), dirs[i]);
+		else
+			sprintf(cmd, "umount \"%s/%s\"", rootDir.c_str(), dirs[i]);
 		system(cmd);
 	}
+}
 
-	sprintf(cmd, "chroot \"%s\" apt-get -y purge ac100-tarball-installer flash-kernel", rootDir.c_str());
+bool MultiROM::ubuntuUpdateInitramfs(std::string rootDir)
+{
+	ui_print("Removing tarball installer...\n");
+
+	setUpChroot(true, rootDir);
+
+	char cmd[256];
+
+	sprintf(cmd, "chroot \"%s\" apt-get -y --force-yes purge ac100-tarball-installer flash-kernel", rootDir.c_str());
 	system(cmd);
 
+	ubuntuDisableFlashKernel(false, rootDir);
+
+	ui_print("Updating initramfs...\n");
 	sprintf(cmd, "chroot \"%s\" update-initramfs -u", rootDir.c_str());
 	system(cmd);
 
-	for(size_t i = 0; i < sizeof(dirs)/sizeof(dirs[0]); ++i)
+	// make proper link to initrd.img
+	sprintf(cmd, "chroot \"%s\" bash -c 'cd /boot; ln -sf $(ls initrd.img-* | head -n1) initrd.img'", rootDir.c_str());
+	system(cmd);
+
+	setUpChroot(false, rootDir);
+	return true;
+}
+
+void MultiROM::ubuntuDisableFlashKernel(bool initChroot, std::string rootDir)
+{
+	ui_print("Disabling flash-kernel");
+	char cmd[256];
+	if(initChroot)
 	{
-		sprintf(cmd, "umount \"%s/%s\"", rootDir.c_str(), dirs[i]);
+		setUpChroot(true, rootDir);
+		sprintf(cmd, "chroot \"%s\" apt-get -y --force-yes purge flash-kernel", rootDir.c_str());
 		system(cmd);
 	}
+
+	// We don't want flash-kernel to be active, ever.
+	sprintf(cmd, "chroot \"%s\" bash -c \"echo flash-kernel hold | dpkg --set-selections\"", rootDir.c_str());
+	system(cmd);
+
+	sprintf(cmd, "if [ \"$(grep FLASH_KERNEL_SKIP '%s/etc/environment')\" == \"\" ]; then"
+			"chroot \"%s\" bash -c \"echo FLASH_KERNEL_SKIP=1 >> /etc/environment\"; fi;",
+			rootDir.c_str(), rootDir.c_str());
+	system(cmd);
+
+	if(initChroot)
+		setUpChroot(false, rootDir);
+}
+
+bool MultiROM::disableFlashKernelAct(std::string name, std::string loc)
+{
+	int type = getType(2, loc);
+	std::string dest = getRomsPath() + "/" + name + "/root";
+	if(type == ROM_UBUNTU_USB_IMG && !mountUbuntuImage(name, dest))
+		return false;
+
+	ubuntuDisableFlashKernel(true, dest);
+
+	sync();
+
+	if(type == ROM_UBUNTU_USB_IMG)
+		umount(dest.c_str());
+	return true;
+}
+
+int MultiROM::getType(int os, std::string loc)
+{
+	switch(os)
+	{
+		case 1: // android
+			if(loc == INTERNAL_MEM_LOC_TXT)
+				return ROM_ANDROID_INTERNAL;
+			else if(loc.find("(ext") != std::string::npos)
+				return ROM_ANDROID_USB_DIR;
+			else
+				return ROM_ANDROID_USB_IMG;
+			break;
+		case 2: // ubuntu
+			if(loc == INTERNAL_MEM_LOC_TXT)
+				return ROM_UBUNTU_INTERNAL;
+			else if(loc.find("(ext") != std::string::npos)
+				return ROM_UBUNTU_USB_DIR;
+			else
+				return ROM_UBUNTU_USB_IMG;
+			break;
+	}
+	return ROM_UNKNOWN;
+}
+
+bool MultiROM::mountUbuntuImage(std::string name, std::string& dest)
+{
+	mkdir("/mnt_ubuntu", 0777);
+
+	char cmd[256];
+	sprintf(cmd, "mount -o loop %s/%s/root.img /mnt_ubuntu", getRomsPath().c_str(), name.c_str());
+
+	if(system(cmd) != 0)
+	{
+		ui_print("Failed to mount ubuntu image!\n");
+		return false;
+	}
+	dest = "/mnt_ubuntu";
 	return true;
 }
 
@@ -1121,25 +1263,7 @@ bool MultiROM::addROM(std::string zip, int os, std::string loc)
 	}
 	ui_print("Installing ROM %s...\n", name.c_str());
 	
-	int type = ROM_UNKNOWN;
-	if(os == 1) // android
-	{
-		if(loc == INTERNAL_MEM_LOC_TXT)
-			type = ROM_ANDROID_INTERNAL;
-		else if(loc.find("(ext") != std::string::npos)
-			type = ROM_ANDROID_USB_DIR;
-		else
-			type = ROM_ANDROID_USB_IMG;
-	}
-	else if(os == 2) // ubuntu
-	{
-		if(loc == INTERNAL_MEM_LOC_TXT)
-			type = ROM_UBUNTU_INTERNAL;
-		else if(loc.find("(ext") != std::string::npos)
-			type = ROM_UBUNTU_USB_DIR;
-		else
-			type = ROM_UBUNTU_USB_IMG;
-	}
+	int type = getType(os, loc);
 
 	if(!createDirs(name, type))
 		return false;
@@ -1177,21 +1301,9 @@ bool MultiROM::addROM(std::string zip, int os, std::string loc)
 		case ROM_UBUNTU_USB_IMG:
 		{
 			std::string dest = getRomsPath() + "/" + name + "/root";
-			if(type == ROM_UBUNTU_USB_IMG)
-			{
-				mkdir("/mnt_ubuntu", 0777);
+			if(type == ROM_UBUNTU_USB_IMG && !mountUbuntuImage(name, dest))
+				break;
 
-				char cmd[256];
-				sprintf(cmd, "mount -o loop %s/%s/root.img /mnt_ubuntu", getRomsPath().c_str(), name.c_str());
-				
-				if(system(cmd) != 0)
-				{
-					ui_print("Failed to mount ubuntu image!\n");
-					break;
-				}
-				dest = "/mnt_ubuntu";
-			}
-				
 			if (ubuntuExtractImage(name, zip, dest) &&
 				patchUbuntuInit(dest) && ubuntuUpdateInitramfs(dest))
 				res = true;
@@ -1200,8 +1312,12 @@ bool MultiROM::addROM(std::string zip, int os, std::string loc)
 			sprintf(cmd, "touch %s/var/lib/oem-config/run", dest.c_str());
 			system(cmd);
 
+			sprintf(cmd, "cp \"%s/infos/ubuntu.txt\" \"%s/%s/rom_info.txt\"",
+					m_path.c_str(), getRomsPath().c_str(), name.c_str());
+			system(cmd);
+
 			if(type == ROM_UBUNTU_USB_IMG)
-				umount("/mnt_ubuntu");
+				umount(dest.c_str());
 			break;
 		}
 	}
@@ -1340,7 +1456,7 @@ bool MultiROM::extractBackupFile(std::string path, std::string part)
 		{
 			ui_print("Restoring archive %i...\n", ++index);
 
-			sprintf(cmd, "cd /%s && tar -xf \"%s\"", part.c_str(), full_path.c_str());
+			sprintf(cmd, "cd /%s && gnutar -xf \"%s\"", part.c_str(), full_path.c_str());
 			system(cmd);
 
 			sprintf(split_index, "%03i", index);
@@ -1355,7 +1471,7 @@ bool MultiROM::extractBackupFile(std::string path, std::string part)
 	}
 	else
 	{
-		sprintf(cmd, "cd /%s && tar -xf \"%s\"", part.c_str(), full_path.c_str());
+		sprintf(cmd, "cd /%s && gnutar -xf \"%s\"", part.c_str(), full_path.c_str());
 		system(cmd);
 	}
 	return true;
