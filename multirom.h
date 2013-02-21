@@ -611,7 +611,7 @@ bool MultiROM::flashZip(std::string rom, std::string file)
 
 bool MultiROM::skipLine(const char *line)
 {
-	if(strstr(line, "mount") && !strstr(line, "bin/mount"))
+	if(strstr(line, "mount") && (!strstr(line, "bin/mount") || strstr(line, "run_program")))
 		return true;
 
 	if(strstr(line, "format"))
@@ -636,13 +636,28 @@ bool MultiROM::prepareZIP(std::string& file)
 	char* script_data;
 	int itr = 0;
 	char *token;
+	bool changed = false;
 
 	char cmd[256];
 	system("rm /tmp/mr_update.zip");
-	sprintf(cmd, "cp \"%s\" /tmp/mr_update.zip", file.c_str());
-	system(cmd);
 
-	file = "/tmp/mr_update.zip";
+	struct stat info;
+	if(stat(file.c_str(), &info) >= 0 && info.st_size < 450*1024*1024)
+	{
+		ui_print("Copying ZIP to /tmp...\n");
+		sprintf(cmd, "cp \"%s\" /tmp/mr_update.zip", file.c_str());
+		system(cmd);
+		file = "/tmp/mr_update.zip";
+	}
+	else
+	{
+		ui_print(" \n");
+		ui_print("=======================================================\n");
+		ui_print("WARN: Modifying the real ZIP, it is too big!\n");
+		ui_print("The ZIP file is now unusable for non-MultiROM flashing!\n");
+		ui_print("=======================================================\n");
+		ui_print(" \n");
+	}
 
 	sprintf(cmd, "mkdir -p /tmp/%s", MR_UPDATE_SCRIPT_PATH);
 	system(cmd);
@@ -654,7 +669,7 @@ bool MultiROM::prepareZIP(std::string& file)
 		return false;
 
 	ZipArchive zip;
-	if (mzOpenZipArchive("/tmp/mr_update.zip", &zip) != 0)
+	if (mzOpenZipArchive(file.c_str(), &zip) != 0)
 		goto exit;
 
 	script_entry = mzFindZipEntry(&zip, MR_UPDATE_SCRIPT_NAME);
@@ -674,15 +689,22 @@ bool MultiROM::prepareZIP(std::string& file)
 			fputs(token, new_script);
 			fputc('\n', new_script);
 		}
+		else
+			changed = true;
 		token = strtok(NULL, "\n");
 	}
 
 	free(script_data);
 	fclose(new_script);
 
-	sprintf(cmd, "cd /tmp && zip mr_update.zip %s", MR_UPDATE_SCRIPT_NAME);
-	if(system(cmd) < 0)
-		return false;
+	if(changed)
+	{
+		sprintf(cmd, "cd /tmp && zip %s %s", file.c_str(), MR_UPDATE_SCRIPT_NAME);
+		if(system(cmd) < 0)
+			return false;
+	}
+	else
+		ui_print("No need to change ZIP.");
 	return true;
 
 exit:
