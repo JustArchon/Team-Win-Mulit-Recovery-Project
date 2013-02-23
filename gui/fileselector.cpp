@@ -54,6 +54,11 @@ GUIFileSelector::GUIFileSelector(xml_node<>* node) : Conditional(node)
 	mFolderIcon = mFileIcon = mBackground = mFont = mHeaderIcon = NULL;
 	mBackgroundX = mBackgroundY = mBackgroundW = mBackgroundH = 0;
 	mShowFolders = mShowFiles = mShowNavFolders = 1;
+	mFastScrollW = 60;
+	mFastScrollLineW = 2;
+	mFastScrollRectW = 40;
+	mFastScrollRectH = 80;
+	mFastScrollRectX = mFastScrollRectY = -1;
 	mUpdate = 0;
 	touchDebounce = 6;
 	mPathVar = "cwd";
@@ -63,6 +68,8 @@ GUIFileSelector::GUIFileSelector(xml_node<>* node) : Conditional(node)
 	ConvertStrToColor("black", &mHeaderSeparatorColor);
 	ConvertStrToColor("white", &mFontColor);
 	ConvertStrToColor("white", &mHeaderFontColor);
+	ConvertStrToColor("white", &mFastScrollLineColor);
+	ConvertStrToColor("white", &mFastScrollRectColor);
 
 	// Load header text
 	child = node->first_node("header");
@@ -279,6 +286,12 @@ GUIFileSelector::GUIFileSelector(xml_node<>* node) : Conditional(node)
 		child = child->next_sibling("exclude");
 	}
 
+	// Fast scroll colors
+	child = node->first_node("fastscrolllinecolor");
+	if (child)  ConvertStrToColor(child->value(), &mFastScrollLineColor);
+	child = node->first_node("fastscrollrectcolor");
+	if (child)  ConvertStrToColor(child->value(), &mFastScrollRectColor);
+
 	// Retrieve the line height
 	gr_getFontDetails(mFont ? mFont->GetResource() : NULL, &mFontHeight, NULL);
 	mLineHeight = mFontHeight;
@@ -341,14 +354,16 @@ int GUIFileSelector::Render(void)
 {
 	if (!isConditionTrue())     return 0;
 
+	int listW = mRenderW;
+
 	// First step, fill background
 	gr_color(mBackgroundColor.red, mBackgroundColor.green, mBackgroundColor.blue, 255);
-	gr_fill(mRenderX, mRenderY + mHeaderH, mRenderW, mRenderH - mHeaderH);
+	gr_fill(mRenderX, mRenderY + mHeaderH, listW, mRenderH - mHeaderH);
 
 	// Next, render the background resource (if it exists)
 	if (mBackground && mBackground->GetResource())
 	{
-		mBackgroundX = mRenderX + ((mRenderW - mBackgroundW) / 2);
+		mBackgroundX = mRenderX + ((listW - mBackgroundW) / 2);
 		mBackgroundY = mRenderY + ((mRenderH - mBackgroundH) / 2);
 		gr_blit(mBackground->GetResource(), 0, 0, mBackgroundW, mBackgroundH, mBackgroundX, mBackgroundY);
 	}
@@ -363,7 +378,9 @@ int GUIFileSelector::Render(void)
 	if (folderSize + fileSize < lines) {
 		lines = folderSize + fileSize;
 		scrollingY = 0;
+		mFastScrollRectX = mFastScrollRectY = -1;
 	} else {
+		listW -= mFastScrollW; // space for fast scroll
 		lines++;
 		if (lines < folderSize + fileSize)
 			lines++;
@@ -417,12 +434,12 @@ int GUIFileSelector::Render(void)
 				rect_y = currentIconHeight;
 			gr_blit(icon->GetResource(), 0, 0, currentIconWidth, rect_y, mRenderX + currentIconOffsetX, image_y);
 		}
-		gr_textExWH(mRenderX + mIconWidth + 5, yPos + fontOffsetY, label.c_str(), fontResource, mRenderX + mRenderW, mRenderY + mRenderH);
+		gr_textExWH(mRenderX + mIconWidth + 5, yPos + fontOffsetY, label.c_str(), fontResource, mRenderX + listW, mRenderY + mRenderH);
 
 		// Add the separator
 		if (yPos + actualLineHeight < mRenderH + mRenderY) {
 			gr_color(mSeparatorColor.red, mSeparatorColor.green, mSeparatorColor.blue, 255);
-			gr_fill(mRenderX, yPos + actualLineHeight - mSeparatorH, mRenderW, mSeparatorH);
+			gr_fill(mRenderX, yPos + actualLineHeight - mSeparatorH, listW, mSeparatorH);
 		}
 
 		// Move the yPos
@@ -455,6 +472,27 @@ int GUIFileSelector::Render(void)
 		// Add the separator
 		gr_color(mHeaderSeparatorColor.red, mHeaderSeparatorColor.green, mHeaderSeparatorColor.blue, 255);
 		gr_fill(mRenderX, yPos + mHeaderH - mHeaderSeparatorH, mRenderW, mHeaderSeparatorH);
+	}
+
+	// render fast scroll
+	lines = (mRenderH - mHeaderH) / (actualLineHeight);
+	if(folderSize + fileSize > lines)
+	{
+		int startX = listW;
+		int fWidth = mRenderW - listW;
+		int fHeight = mRenderH - mHeaderH;
+
+		// line
+		gr_color(mFastScrollLineColor.red, mFastScrollLineColor.green, mFastScrollLineColor.blue, 255);
+		gr_fill(startX + fWidth/2, mRenderY + mHeaderH, mFastScrollLineW, mRenderH - mHeaderH);
+
+		// rect
+		int pct = (mStart*100)/((folderSize + fileSize)-lines);
+		mFastScrollRectX = startX + (fWidth - mFastScrollRectW)/2;
+		mFastScrollRectY = mRenderY+mHeaderH + ((fHeight - mFastScrollRectH)*pct)/100;
+		
+		gr_color(mFastScrollRectColor.red, mFastScrollRectColor.green, mFastScrollRectColor.blue, 255);
+		gr_fill(mFastScrollRectX, mFastScrollRectY, mFastScrollRectW, mFastScrollRectH);
 	}
 
 	mUpdate = 0;
@@ -566,6 +604,31 @@ int GUIFileSelector::NotifyTouch(TOUCH_STATE state, int x, int y)
 		// Check if we dragged out of the selection window
 		if (GetSelection(x, y) == -1) {
 			last2Y = lastY = 0;
+			break;
+		}
+
+		// Fast scroll
+		if(mFastScrollRectX != -1 && x >= mRenderW - mFastScrollW)
+		{
+			int pct = ((y-mRenderY-mHeaderH)*100)/(mRenderH-mHeaderH);
+			int totalSize = (mShowFolders ? mFolderList.size() : 0) + (mShowFiles ? mFileList.size() : 0);
+			int lines = (mRenderH - mHeaderH) / (actualLineHeight);
+
+			float l = float((totalSize-lines)*pct)/100;
+			if(l + lines >= totalSize)
+			{
+				mStart = totalSize - lines;
+				scrollingY = 0;
+			}
+			else
+			{
+				mStart = l;
+				scrollingY = -(l - int(l))*actualLineHeight;
+			}
+
+			startSelection = -1;
+			mUpdate = 1;
+			scrollingSpeed = 0;
 			break;
 		}
 
