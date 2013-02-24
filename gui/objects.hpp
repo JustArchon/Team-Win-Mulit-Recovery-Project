@@ -355,8 +355,9 @@ protected:
     int mTextX, mTextY, mTextW, mTextH;
     int mIconX, mIconY, mIconW, mIconH;
     bool mRendered;
-    int highlightRenderCount;
-    COLOR mHighlightColor;
+	bool hasHighlightColor;
+	bool renderHighlight;
+	COLOR mHighlightColor;
 };
 
 class GUICheckbox: public RenderObject, public ActionObject, public Conditional
@@ -461,6 +462,12 @@ protected:
     int mUpdate;
     int mBackgroundX, mBackgroundY, mBackgroundW, mBackgroundH;
 	int mHeaderH;
+	int mFastScrollW;
+	int mFastScrollLineW;
+	int mFastScrollRectW;
+	int mFastScrollRectH;
+	int mFastScrollRectX;
+	int mFastScrollRectY;
 	static int mSortOrder;
 	int startY;
 	int scrollingSpeed;
@@ -481,6 +488,14 @@ protected:
 	COLOR mHeaderFontColor;
 	COLOR mSeparatorColor;
 	COLOR mHeaderSeparatorColor;
+	COLOR mFastScrollLineColor;
+	COLOR mFastScrollRectColor;
+	bool hasHighlightColor;
+	bool hasFontHighlightColor;
+	bool isHighlighted;
+	COLOR mHighlightColor;
+	COLOR mFontHighlightColor;
+	int startSelection;
 };
 
 class GUIListBox : public RenderObject, public ActionObject, public Conditional
@@ -528,20 +543,40 @@ protected:
 	std::string mSelection;
 	std::string currentValue;
 	std::string mItemsVar;
+	std::string mHeaderText;
+	std::string mLastValue;
+	int actualLineHeight;
     int mStart;
+	int startY;
+	int mSeparatorH, mHeaderSeparatorH;
     int mLineSpacing;
     int mUpdate;
-    int mBackgroundX, mBackgroundY, mBackgroundW, mBackgroundH;
+    int mBackgroundX, mBackgroundY, mBackgroundW, mBackgroundH, mHeaderH;
+	int mIconWidth, mIconHeight, mSelectedIconWidth, mSelectedIconHeight, mUnselectedIconWidth, mUnselectedIconHeight, mHeaderIconHeight, mHeaderIconWidth;
+	int scrollingSpeed;
+	int scrollingY;
 	static int mSortOrder;
     unsigned mFontHeight;
     unsigned mLineHeight;
-    int mIconWidth, mIconHeight;
+	Resource* mHeaderIcon;
     Resource* mIconSelected;
     Resource* mIconUnselected;
     Resource* mBackground;
     Resource* mFont;
     COLOR mBackgroundColor;
     COLOR mFontColor;
+	COLOR mHeaderBackgroundColor;
+	COLOR mHeaderFontColor;
+	COLOR mSeparatorColor;
+	COLOR mHeaderSeparatorColor;
+	bool hasHighlightColor;
+	bool hasFontHighlightColor;
+	bool isHighlighted;
+	COLOR mHighlightColor;
+	COLOR mFontHighlightColor;
+	int mHeaderIsStatic;
+	int startSelection;
+	int touchDebounce;
 };
 
 // GUIAnimation - Used for animations
