@@ -818,6 +818,12 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 
     if (isThreaded)
     {
+		if (function == "timeout")
+		{
+			blankTimer.blankScreen();
+			return 0;
+		}
+	
 		if (function == "multirom_delete")
 		{
 			int op_status = 0;
@@ -860,7 +866,11 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 		if (function == "multirom_inject_curr_boot")
 		{
 			operation_start("Injecting");
-			int op_status = !MultiROM::injectBoot("/dev/block/mmcblk0p2");
+			int op_status = !MultiROM::folderExists();
+			if(op_status)
+				ui_print("MultiROM is not installed!\n");
+			else
+				op_status = !MultiROM::injectBoot("/dev/block/mmcblk0p2");
 			operation_end(op_status, simulate);
 		}
 

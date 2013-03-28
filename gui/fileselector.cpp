@@ -70,6 +70,7 @@ GUIFileSelector::GUIFileSelector(xml_node<>* node) : Conditional(node)
 	hasHighlightColor = false;
 	hasFontHighlightColor = false;
 	isHighlighted = false;
+	updateFileList = false;
 	startSelection = -1;
 
 	// Load header text
@@ -418,6 +419,17 @@ int GUIFileSelector::Render(void)
 		gr_blit(mBackground->GetResource(), 0, 0, mBackgroundW, mBackgroundH, mBackgroundX, mBackgroundY);
 	}
 
+	// Update the file list if needed
+	if (updateFileList) {
+		string value;
+		DataManager::GetValue(mPathVar, value);
+		if (GetFileList(value) == 0) {
+			updateFileList = false;
+		} else {
+			return 0;
+		}
+	}
+
 	// This tells us how many lines we can actually render
 	int lines = (mRenderH - mHeaderH) / (actualLineHeight);
 	int line;
@@ -555,7 +567,7 @@ int GUIFileSelector::Render(void)
 	lines = (mRenderH - mHeaderH) / (actualLineHeight);
 	if(mFastScrollW > 0 && folderSize + fileSize > lines)
 	{
-		int startX = listW;
+		int startX = listW + mRenderX;
 		int fWidth = mRenderW - listW;
 		int fHeight = mRenderH - mHeaderH;
 
@@ -572,7 +584,10 @@ int GUIFileSelector::Render(void)
 		gr_fill(mFastScrollRectX, mFastScrollRectY, mFastScrollRectW, mFastScrollRectH);
 	}
 
-	mUpdate = 0;
+	// If a change came in during the render then we need to do another redraw so leave mUpdate alone if updateFileList is true.
+	if (!updateFileList) {
+		mUpdate = 0;
+	}
 	return 0;
 }
 
@@ -691,7 +706,7 @@ int GUIFileSelector::NotifyTouch(TOUCH_STATE state, int x, int y)
 		}
 
 		// Fast scroll
-		if(mFastScrollRectX != -1 && x >= mRenderW - mFastScrollW)
+		if(mFastScrollRectX != -1 && x >= mRenderX + mRenderW - mFastScrollW)
 		{
 			int pct = ((y-mRenderY-mHeaderH)*100)/(mRenderH-mHeaderH);
 			int totalSize = (mShowFolders ? mFolderList.size() : 0) + (mShowFiles ? mFileList.size() : 0);
@@ -822,7 +837,6 @@ int GUIFileSelector::NotifyTouch(TOUCH_STATE state, int x, int y)
 					else
 					{
 						DataManager::SetValue(mPathVar, cwd);
-						GetFileList(cwd);
 						mStart = 0;
 						scrollingY = 0;
 						mUpdate = 1;
@@ -857,8 +871,7 @@ int GUIFileSelector::NotifyTouch(TOUCH_STATE state, int x, int y)
 
 int GUIFileSelector::NotifyVarChange(std::string varName, std::string value)
 {
-	if (varName.empty())
-	{
+	if (varName.empty()) {
 		// Always clear the data variable so we know to use it
 		DataManager::SetValue(mVariable, "");
 	}
@@ -874,12 +887,13 @@ int GUIFileSelector::NotifyVarChange(std::string varName, std::string value)
 	}
 	if (varName == mPathVar || varName == mSortVariable)
 	{
-		DataManager::GetValue(mPathVar, value);  // sometimes the value will be the sort order instead of the path, so we read the path everytime
-		DataManager::GetValue(mSortVariable, mSortOrder);
+		if (varName == mSortVariable) {
+			DataManager::GetValue(mSortVariable, mSortOrder);
+		}
+		updateFileList = true;
 		mStart = 0;
 		scrollingY = 0;
 		scrollingSpeed = 0;
-		GetFileList(value);
 		mUpdate = 1;
 		return 0;
 	}
@@ -1024,6 +1038,7 @@ int GUIFileSelector::GetFileList(const std::string folder)
 
 	std::sort(mFolderList.begin(), mFolderList.end(), fileSort);
 	std::sort(mFileList.begin(), mFileList.end(), fileSort);
+
 	return 0;
 }
 
@@ -1031,9 +1046,9 @@ void GUIFileSelector::SetPageFocus(int inFocus)
 {
 	if (inFocus)
 	{
-		std::string value;
-		DataManager::GetValue(mPathVar, value);
-		GetFileList(value);
+		updateFileList = true;
+		scrollingY = 0;
+		scrollingSpeed = 0;
+		mUpdate = 1;
 	}
 }
-

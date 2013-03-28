@@ -185,9 +185,12 @@ input_thread (void *cookie)
 	0, lshift = 0, rshift = 0, key_repeat = 0;
   static struct timeval touchStart;
   HardwareKeyboard kb;
+  string seconds;
 
   //start screen timeout threads
   blankTimer.setTimerThread();
+  DataManager::GetValue("tw_screen_timeout_secs", seconds);
+  blankTimer.setTime(atoi(seconds.c_str()));
 
   for (;;)
 	{
@@ -262,7 +265,7 @@ input_thread (void *cookie)
 				  LOGE ("TOUCH_RELEASE: %d,%d\n", x, y);
 #endif
 				  PageManager::NotifyTouch (TOUCH_RELEASE, x, y);
-				  blankTimer.resetTimerAndUnblank();
+				  //blankTimer.resetTimerAndUnblank();
 				  touch_and_hold = 0;
 				  touch_repeat = 0;
 				  if (!key_repeat)
@@ -326,7 +329,7 @@ input_thread (void *cookie)
 				  touch_and_hold = 0;
 				  touch_repeat = 0;
 				  dontwait = 0;
-				  blankTimer.resetTimerAndUnblank();
+				  //blankTimer.resetTimerAndUnblank();
 				}
 			}
 		  else
@@ -337,7 +340,7 @@ input_thread (void *cookie)
 			  touch_and_hold = 0;
 			  touch_repeat = 0;
 			  dontwait = 0;
-                          blankTimer.resetTimerAndUnblank();
+			//blankTimer.resetTimerAndUnblank();
 			}
 		}
 	}
