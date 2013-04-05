@@ -701,7 +701,9 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 			DataManager::SetValue("tw_multirom_delay", cfg.auto_boot_seconds);
 		DataManager::SetValue("tw_multirom_current", cfg.current_rom);
 		DataManager::SetValue("tw_multirom_auto_boot_rom", cfg.auto_boot_rom);
-		DataManager::SetValue("tw_multirom_set_quiet_ubuntu", cfg.set_quiet_ubuntu);
+		DataManager::SetValue("tw_multirom_colors", cfg.colors);
+		DataManager::SetValue("tw_multirom_brightness", cfg.brightness);
+		DataManager::SetValue("tw_multirom_enable_adb", cfg.enable_adb);
 
 		DataManager::SetValue("tw_multirom_roms", MultiROM::listRoms());
 		return gui_changePage("multirom_settings");
@@ -716,7 +718,9 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 		else
 			cfg.auto_boot_seconds = 0;
 		cfg.auto_boot_rom = DataManager::GetStrValue("tw_multirom_auto_boot_rom");
-		cfg.set_quiet_ubuntu = DataManager::GetIntValue("tw_multirom_set_quiet_ubuntu");
+		cfg.colors = DataManager::GetIntValue("tw_multirom_colors");
+		cfg.brightness = DataManager::GetIntValue("tw_multirom_brightness");
+		cfg.enable_adb = DataManager::GetIntValue("tw_multirom_enable_adb");
 
 		MultiROM::saveConfig(cfg);
 		return gui_changePage("multirom_main");
@@ -784,10 +788,10 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 				return i->destroyWithErrorMsg(ex);
 
 			DataManager::SetValue("tw_mrom_title", "Unsupported install location");
-			if(!(ex = i->checkInstallLoc(loc)).empty())
+			if(!(ex = i->setInstallLoc(loc, images)).empty())
 				return i->destroyWithErrorMsg(ex);
 			
-			if(!(ex = i->parseBaseFolders(images, loc.find("ntfs") != std::string::npos)).empty())
+			if(!(ex = i->parseBaseFolders(loc.find("ntfs") != std::string::npos)).empty())
 				return i->destroyWithErrorMsg(ex);
 
 			MultiROM::updateImageVariables();
@@ -808,7 +812,7 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 
 		base_folder *b = MultiROM::getBaseFolder(arg);
 		if(b != NULL)
-			DataManager::SetValue("tw_multirom_image_size", b->def_size);
+			DataManager::SetValue("tw_multirom_image_size", b->size);
 
 		return gui_changePage("multirom_change_img_size");
 	}
@@ -838,7 +842,7 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 			return gui_changePage("multirom_change_img_size");
 		}
 
-		b->def_size = value;
+		b->size = value;
 		MultiROM::updateImageVariables();
 		return gui_changePage("multirom_add_image_size");
 	}
