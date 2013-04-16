@@ -50,7 +50,7 @@
 	#include "cutils/properties.h"
 #endif
 
-extern RecoveryUI* ui;
+//extern RecoveryUI* ui;
 
 TWPartitionManager::TWPartitionManager()
 {
@@ -1203,7 +1203,6 @@ void TWPartitionManager::Refresh_Sizes(void) {
 void TWPartitionManager::Update_Partition_Details(int update_size, int *data_size)
 {
 	std::vector<TWPartition*>::iterator iter;
-	int data_size = 0;
 
 	gui_print("Updating partition details...\n");
 	for (iter = Partitions.begin(); iter != Partitions.end(); iter++) {
@@ -1283,7 +1282,7 @@ void TWPartitionManager::Update_Partition_Details(int update_size, int *data_siz
 				} else
 					DataManager::SetValue(TW_HAS_RECOVERY_PARTITION, 1);
 			} else if ((*iter)->Mount_Point == "/data") {
-				data_size += (int)((*iter)->Backup_Size / 1048576LLU);
+				*data_size += (int)((*iter)->Backup_Size / 1048576LLU);
 			}
 #ifdef SP1_NAME
 			if ((*iter)->Backup_Name == EXPAND(SP1_NAME)) {
@@ -1310,13 +1309,13 @@ void TWPartitionManager::Update_Partition_Details(int update_size, int *data_siz
 void TWPartitionManager::Update_System_Details(void) {
 	if(pthread_mutex_trylock(&mDetailsMutex) != 0)
 	{
-		ui_print("Waiting for previous update to finish...\n");
+		gui_print("Waiting for previous update to finish...\n");
 		pthread_mutex_lock(&mDetailsMutex);
 	}
 
 	int data_size = 0;
 
-	ui_print("Updating partition details...\n");
+	gui_print("Updating partition details...\n");
 
 	// do this twice - first without updating size just to enumerate partitions,
 	// and second to get actual size. This is done because updating free space

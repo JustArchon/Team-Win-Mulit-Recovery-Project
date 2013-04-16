@@ -53,6 +53,18 @@ static void Print_Prop(const char *key, const char *name, void *cookie) {
 	printf("%s=%s\n", key, name);
 }
 
+static void *process_fstab_thread_work(void *cookie)
+{
+	int t_start = time(NULL);
+	if (!PartitionManager.Process_Fstab("/etc/recovery.fstab", 1)) {
+		LOGERR("Failing out of recovery due to problem with recovery.fstab.\n");
+		//return -1;
+	}
+	PartitionManager.Output_Partition_Logging();
+	LOGERR("Process fstab exited after %ds!\n", time(NULL)-t_start);
+	return NULL;
+}
+
 int main(int argc, char **argv) {
 	// Recovery needs to install world-readable files, so clear umask
 	// set by init
@@ -82,10 +94,12 @@ int main(int argc, char **argv) {
 	printf("=> Linking mtab\n");
 	symlink("/proc/mounts", "/etc/mtab");
 	printf("=> Processing recovery.fstab\n");
-	if (!PartitionManager.Process_Fstab("/etc/recovery.fstab", 1)) {
+	pthread_t fstab_thread;
+	pthread_create(&fstab_thread, NULL, process_fstab_thread_work, NULL);
+	/*if (!PartitionManager.Process_Fstab("/etc/recovery.fstab", 1)) {
 		LOGERR("Failing out of recovery due to problem with recovery.fstab.\n");
 		return -1;
-	}
+	}*/
 	PartitionManager.Output_Partition_Logging();
 	// Load up all the resources
 	gui_loadResources();
