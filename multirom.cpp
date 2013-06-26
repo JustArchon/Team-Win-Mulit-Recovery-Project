@@ -392,7 +392,7 @@ bool MultiROM::changeMounts(std::string name)
 
 		m_mount_bak.push_back(b);
 	}
-	system("umount /system /data /cache");
+	system("umount -d /system /data /cache");
 
 	FILE *f_fstab = fopen("/etc/fstab", "w");
 	if(!f_fstab)
@@ -477,7 +477,7 @@ bool MultiROM::changeMounts(std::string name)
 void MultiROM::restoreMounts()
 {
 	system("mv /sbin/umount.bak /sbin/umount");
-	system("umount /system /data /cache");
+	system("umount -d /system /data /cache");
 
 	for(size_t i = 0; i < m_mount_bak.size(); ++i)
 	{
@@ -838,8 +838,15 @@ std::string MultiROM::getNewRomName(std::string zip, std::string def)
 
 		if(zip.substr(idx) == "/rootfs.img")
 			name = "Ubuntu";
-		else if(idx != std::string::npos && idx_dot != std::string::npos && idx_dot > idx)
-			name = zip.substr(idx+1, idx_dot-idx-1);
+		else if(idx != std::string::npos)
+		{
+			// android backups
+			if(DataManager::GetStrValue("tw_multirom_add_source") == "backup")
+				name = "bckp_" + zip.substr(idx+1);
+			// ZIP files
+			else if(idx_dot != std::string::npos && idx_dot > idx)
+				name = zip.substr(idx+1, idx_dot-idx-1);
+		}
 	}
 	else
 		name = def;
@@ -1156,7 +1163,7 @@ bool MultiROM::ubuntuExtractImage(std::string name, std::string img_path, std::s
 	}
 
 	system("mkdir /mnt_ub_img");
-	system("umount /mnt_ub_img");
+	system("umount -d /mnt_ub_img");
 
 	gui_print("Converting the image (may take a while)...\n");
 	sprintf(cmd, "simg2img \"%s\" /tmp/rootfs.img", img_path.c_str());
@@ -1166,7 +1173,7 @@ bool MultiROM::ubuntuExtractImage(std::string name, std::string img_path, std::s
 
 	if(stat("/mnt_ub_img/rootfs.tar.gz", &info) < 0)
 	{
-		system("umount /mnt_ub_img");
+		system("umount -d /mnt_ub_img");
 		system("rm /tmp/rootfs.img");
 		gui_print("Invalid Ubuntu image (rootfs.tar.gz not found)!\n");
 		return false;
@@ -1178,7 +1185,7 @@ bool MultiROM::ubuntuExtractImage(std::string name, std::string img_path, std::s
 
 	sync();
 
-	system("umount /mnt_ub_img");
+	system("umount -d /mnt_ub_img");
 	system("rm /tmp/rootfs.img");
 
 	sprintf(cmd, "%s/boot/vmlinuz", dest.c_str());
@@ -1256,7 +1263,7 @@ bool MultiROM::ubuntuUpdateInitramfs(std::string rootDir)
 
 void MultiROM::ubuntuDisableFlashKernel(bool initChroot, std::string rootDir)
 {
-	gui_print("Disabling flash-kernel");
+	gui_print("Disabling flash-kernel\n");
 	char cmd[512];
 	if(initChroot)
 	{
@@ -1269,7 +1276,7 @@ void MultiROM::ubuntuDisableFlashKernel(bool initChroot, std::string rootDir)
 	sprintf(cmd, "chroot \"%s\" bash -c \"echo flash-kernel hold | dpkg --set-selections\"", rootDir.c_str());
 	system(cmd);
 
-	sprintf(cmd, "if [ \"$(grep FLASH_KERNEL_SKIP '%s/etc/environment')\" == \"\" ]; then"
+	sprintf(cmd, "if [ \"$(grep FLASH_KERNEL_SKIP '%s/etc/environment')\" == \"\" ]; then "
 			"chroot \"%s\" bash -c \"echo FLASH_KERNEL_SKIP=1 >> /etc/environment\"; fi;",
 			rootDir.c_str(), rootDir.c_str());
 	system(cmd);
@@ -1470,6 +1477,8 @@ bool MultiROM::addROM(std::string zip, int os, std::string loc)
 	delete m_installer;
 	m_installer = NULL;
 
+	DataManager::SetValue("tw_multirom_add_source", "");
+
 	return res;
 }
 
@@ -1513,7 +1522,7 @@ bool MultiROM::patchInit(std::string name)
 	sync();
 
 	if(type == ROM_UBUNTU_USB_IMG)
-		umount("/mnt_ubuntu");;
+		system("umount -d /mnt_ubuntu");;
 	return res;
 }
 
@@ -1592,9 +1601,10 @@ bool MultiROM::extractBackupFile(std::string path, std::string part)
 		full_path = path + "/" + filename + split_index;
 		while (stat(full_path.c_str(), &info) >= 0)
 		{
-			gui_print("Restoring archive %i...\n", ++index);
+			gui_print("Restoring archive #%i...\n", ++index);
 
-			sprintf(cmd, "cd /%s && gnutar -xf \"%s\"", part.c_str(), full_path.c_str());
+			sprintf(cmd, "cd / && gnutar -xf \"%s\"", full_path.c_str());
+			LOGI("Restore cmd: %s\n", cmd);
 			system(cmd);
 
 			sprintf(split_index, "%03i", index);
@@ -1610,6 +1620,7 @@ bool MultiROM::extractBackupFile(std::string path, std::string part)
 	else
 	{
 		sprintf(cmd, "cd /%s && gnutar -xf \"%s\"", part.c_str(), full_path.c_str());
+		LOGI("Restore cmd: %s\n", cmd);
 		system(cmd);
 	}
 	return true;
@@ -1705,8 +1716,10 @@ void MultiROM::umountBaseImages(const std::string& base)
 	char cmd[256];
 	for(baseFolders::const_iterator itr = m_base_folders.begin(); itr != m_base_folders.end(); ++itr)
 	{
+		sprintf(cmd, "umount -d %s/%s", base.c_str(), itr->first.c_str());
+		system(cmd);
+
 		sprintf(cmd, "%s/%s", base.c_str(), itr->first.c_str());
-		umount(cmd);
 		rmdir(cmd);
 	}
 	rmdir(base.c_str());
