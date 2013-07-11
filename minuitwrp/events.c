@@ -29,7 +29,7 @@
 
 //#define _EVENT_LOGGING
 
-#define MAX_DEVICES         16
+#define MAX_DEVICES         32
 
 #define VIBRATOR_TIMEOUT_FILE	"/sys/class/timed_output/vibrator/enable"
 #define VIBRATOR_TIME_MS    50
@@ -303,12 +303,12 @@ static int vk_tp_to_screen(struct position *p, int *x, int *y)
 #endif
 
 #ifndef RECOVERY_TOUCHSCREEN_SWAP_XY
-    int fb_width = gr_fb_width();
-    int fb_height = gr_fb_height();
+    int fb_width = gr_screen_width();
+    int fb_height = gr_screen_height();
 #else
     // We need to swap the scaling sizes, too
-    int fb_width = gr_fb_height();
-    int fb_height = gr_fb_width();
+    int fb_width = gr_screen_height();
+    int fb_height = gr_screen_width();
 #endif
 
     *x = (p->x - p->xi.minimum) * (fb_width - 1) / (p->xi.maximum - p->xi.minimum);
@@ -331,6 +331,7 @@ static int vk_modify(struct ev *e, struct input_event *ev)
     static int discard = 0;
     static int lastWasSynReport = 0;
     static int touchReleaseOnNextSynReport = 0;
+	static int use_tracking_id_negative_as_touch_release = 0; // On some devices, type: 3  code: 39  value: -1, aka EV_ABS ABS_MT_TRACKING_ID -1 indicates a true touch release
     int i;
     int x, y;
 
@@ -433,23 +434,42 @@ static int vk_modify(struct ev *e, struct input_event *ev)
 #endif
             break;
 
-#ifdef _EVENT_LOGGING
-		// All of these items are strictly for logging purposes only. Return 1 because they don't need to be handled.
         case ABS_MT_TOUCH_MINOR: //31
+#ifdef _EVENT_LOGGING
             printf("EV: %s => EV_ABS ABS_MT_TOUCH_MINOR %d\n", e->deviceName, ev->value);
-			return 1;
+#endif
             break;
 
         case ABS_MT_WIDTH_MAJOR: //32
+#ifdef _EVENT_LOGGING
             printf("EV: %s => EV_ABS ABS_MT_WIDTH_MAJOR %d\n", e->deviceName, ev->value);
-			return 1;
+#endif
             break;
 
         case ABS_MT_WIDTH_MINOR: //33
+#ifdef _EVENT_LOGGING
             printf("EV: %s => EV_ABS ABS_MT_WIDTH_MINOR %d\n", e->deviceName, ev->value);
-			return 1;
+#endif
             break;
 
+        case ABS_MT_TRACKING_ID: //39
+            if (ev->value < 0) {
+                e->mt_p.x = 0;
+                e->mt_p.y = 0;
+                touchReleaseOnNextSynReport = 2;
+                use_tracking_id_negative_as_touch_release = 1;
+#ifdef _EVENT_LOGGING
+                if (use_tracking_id_negative_as_touch_release)
+                    printf("using ABS_MT_TRACKING_ID value -1 to indicate touch releases\n");
+#endif
+            }
+#ifdef _EVENT_LOGGING
+            printf("EV: %s => EV_ABS ABS_MT_TRACKING_ID %d\n", e->deviceName, ev->value);
+#endif
+            break;
+
+#ifdef _EVENT_LOGGING
+        // These are for touch logging purposes only
         case ABS_MT_ORIENTATION: //34
             printf("EV: %s => EV_ABS ABS_MT_ORIENTATION %d\n", e->deviceName, ev->value);
 			return 1;
@@ -462,11 +482,6 @@ static int vk_modify(struct ev *e, struct input_event *ev)
 
         case ABS_MT_BLOB_ID: //38
             printf("EV: %s => EV_ABS ABS_MT_BLOB_ID %d\n", e->deviceName, ev->value);
-			return 1;
-            break;
-
-        case ABS_MT_TRACKING_ID: //39
-            printf("EV: %s => EV_ABS ABS_MT_TRACKING_ID %d\n", e->deviceName, ev->value);
 			return 1;
             break;
 
@@ -503,7 +518,7 @@ static int vk_modify(struct ev *e, struct input_event *ev)
     // Discard the MT versions
     if (ev->code == SYN_MT_REPORT)      return 0;
 
-    if (lastWasSynReport == 1 || touchReleaseOnNextSynReport == 1)
+    if (((lastWasSynReport == 1 || touchReleaseOnNextSynReport == 1) && !use_tracking_id_negative_as_touch_release) || (use_tracking_id_negative_as_touch_release && touchReleaseOnNextSynReport == 2))
     {
         // Reset the value
         touchReleaseOnNextSynReport = 0;
@@ -552,6 +567,54 @@ static int vk_modify(struct ev *e, struct input_event *ev)
 #endif
 #ifdef RECOVERY_TOUCHSCREEN_FLIP_Y
     y = gr_fb_height() - y;
+#endif
+
+#ifdef TW_HAS_LANDSCAPE
+    switch(gr_get_rotation())
+    {
+        case 0:
+        default:
+            break;
+        case 90:
+#ifdef RECOVERY_TOUCHSCREEN_FLIP_X
+            x = gr_fb_width() - x;
+#endif
+#ifdef RECOVERY_TOUCHSCREEN_FLIP_Y
+            y = gr_fb_height() - y;
+#endif
+
+            x ^= y;
+            y ^= x;
+            x ^= y;
+
+#ifndef RECOVERY_TOUCHSCREEN_FLIP_X
+            y = gr_fb_height() - y;
+#endif
+            break;
+        case 180:
+            y = gr_fb_height() - y;
+            x = gr_fb_width() - x;
+            break;
+        case 270:
+#ifdef RECOVERY_TOUCHSCREEN_FLIP_X
+            x = gr_fb_width() - x;
+#endif
+#ifdef RECOVERY_TOUCHSCREEN_FLIP_Y
+            y = gr_fb_height() - y;
+#endif
+
+            x ^= y;
+            y ^= x;
+            x ^= y;
+
+#ifdef RECOVERY_TOUCHSCREEN_FLIP_X
+            y = gr_fb_height() - y;
+#endif
+#ifndef RECOVERY_TOUCHSCREEN_FLIP_Y
+            x = gr_fb_width() - x;
+#endif
+            break;
+    }
 #endif
 
 #ifdef _EVENT_LOGGING

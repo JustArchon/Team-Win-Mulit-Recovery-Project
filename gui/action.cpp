@@ -31,6 +31,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <sys/wait.h>
+#include <dirent.h>
 
 #include <string>
 #include <sstream>
@@ -386,28 +387,24 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 	}
 
     if (function == "reload") {
-		int check = 0, ret_val = 0;
-		std::string theme_path;
-
 		operation_start("Reload Theme");
-		theme_path = DataManager::GetSettingsStoragePath();
-		if (PartitionManager.Mount_By_Path(theme_path.c_str(), 1) < 0) {
-			LOGERR("Unable to mount %s during reload function startup.\n", theme_path.c_str());
-			check = 1;
-		}
+		gui_setRenderEnabled(0);
+		int ret_val = !TWFunc::reloadTheme();
+		gui_setRenderEnabled(1);
+		operation_end(ret_val, simulate);
+		return 0;
+	}
 
-		theme_path += "/TWRP/theme/ui.zip";
-		if (check != 0 || PageManager::ReloadPackage("TWRP", theme_path) != 0)
-		{
-			// Loading the custom theme failed - try loading the stock theme
-			LOGINFO("Attempting to reload stock theme...\n");
-			if (PageManager::ReloadPackage("TWRP", "/res/ui.xml"))
-			{
-				LOGERR("Failed to load base packages.\n");
-				ret_val = 1;
-			}
-		}
-        operation_end(ret_val, simulate);
+	if(function == "rotation") {
+		int rot = atoi(arg.c_str());
+
+		if(rot == gr_get_rotation())
+			return 0;
+
+		operation_start("Rotation");
+		int res = gui_rotate(rot);
+		operation_end(res != 0, simulate);
+		return 0;
 	}
 
     if (function == "readBackup")
@@ -497,6 +494,7 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 			PartitionManager.Mount_Current_Storage(true);
 		}
 		operation_end(0, simulate);
+		return 0;
 	}
 	
 	if (function == "copylog")
@@ -744,6 +742,8 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 		DataManager::SetValue("tw_multirom_colors", cfg.colors);
 		DataManager::SetValue("tw_multirom_brightness", cfg.brightness);
 		DataManager::SetValue("tw_multirom_enable_adb", cfg.enable_adb);
+		DataManager::SetValue("tw_multirom_hide_internal", cfg.hide_internal);
+		DataManager::SetValue("tw_multirom_int_display_name", cfg.int_display_name);
 
 		DataManager::SetValue("tw_multirom_roms", MultiROM::listRoms());
 		return gui_changePage("multirom_settings");
@@ -761,6 +761,8 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 		cfg.colors = DataManager::GetIntValue("tw_multirom_colors");
 		cfg.brightness = DataManager::GetIntValue("tw_multirom_brightness");
 		cfg.enable_adb = DataManager::GetIntValue("tw_multirom_enable_adb");
+		cfg.hide_internal = DataManager::GetIntValue("tw_multirom_hide_internal");
+		cfg.int_display_name = DataManager::GetStrValue("tw_multirom_int_display_name");
 
 		MultiROM::saveConfig(cfg);
 		return gui_changePage("multirom_main");
@@ -775,10 +777,17 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 
 	if (function == "multirom_add_second")
 	{
-		if(DataManager::GetIntValue("tw_multirom_type") == 1)
-			return gui_changePage("multirom_add_source");
-		else
-			return gui_changePage("multirom_add_select");
+		switch(DataManager::GetIntValue("tw_multirom_type"))
+		{
+			case 1:
+				return gui_changePage("multirom_add_source");
+			case 4:
+				DataManager::SetValue("tw_touch_filename_device", "");
+				DataManager::SetValue("tw_touch_filename_core", "");
+				return gui_changePage("multirom_add_touch");
+			default:
+				return gui_changePage("multirom_add_select");
+		}
 	}
 
 	if (function == "multirom_add_file_selected")
@@ -789,16 +798,24 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 
 		MultiROM::clearBaseFolders();
 
-		if(type == 1 || type == 2)
+		if(type == 1 || type == 2 || type == 4)
 		{
-			if(type == 1)
+			switch(type)
 			{
-				MultiROM::addBaseFolder("data", 150, 1024);
-				MultiROM::addBaseFolder("system", 450, 640);
-				MultiROM::addBaseFolder("cache", 50, 436);
+				case 1: // Android
+					MultiROM::addBaseFolder("data", 150, 1024);
+					MultiROM::addBaseFolder("system", 450, 640);
+					MultiROM::addBaseFolder("cache", 50, 436);
+					break;
+				case 2: // Ubuntu dekstop
+					MultiROM::addBaseFolder("root", 2000, 4095);
+					break;
+				case 4: // Ubuntu touch
+					MultiROM::addBaseFolder("data", 1024, 2048);
+					MultiROM::addBaseFolder("system", 450, 640);
+					MultiROM::addBaseFolder("cache", 50, 436);
+					break;
 			}
-			else
-				MultiROM::addBaseFolder("root", 2000, 4095);
 
 			MultiROM::updateImageVariables();
 
@@ -933,6 +950,7 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 
 			PartitionManager.Update_System_Details();
 			operation_end(op_status, simulate);
+			return 0;
 		}
 
 		if (function == "multirom_inject")
@@ -946,6 +964,7 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 			if(!op_status)
 				op_status = !MultiROM::injectBoot(path);
 			operation_end(op_status, simulate);
+			return 0;
 		}
 
 		if (function == "multirom_inject_curr_boot")
@@ -957,6 +976,7 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 			else
 				op_status = !MultiROM::injectBoot("/dev/block/mmcblk0p2");
 			operation_end(op_status, simulate);
+			return 0;
 		}
 
 		if (function == "multirom_add_rom")
@@ -968,6 +988,7 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 											  DataManager::GetStrValue("tw_multirom_install_loc"));
 			PartitionManager.Update_System_Details();
 			operation_end(op_status, simulate);
+			return 0;
 		}
 
 		if (function == "multirom_ubuntu_patch_init")
@@ -975,6 +996,7 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 			operation_start("Patching");
 			int op_status = !MultiROM::patchInit(DataManager::GetStrValue("tw_multirom_rom_name"));
 			operation_end(op_status, simulate);
+			return 0;
 		}
 
 		if (function == "multirom_wipe")
@@ -983,6 +1005,7 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 			int op_status = !MultiROM::wipe(DataManager::GetStrValue("tw_multirom_rom_name"),
 											DataManager::GetStrValue("tw_multirom_wipe"));
 			operation_end(op_status, simulate);
+			return 0;
 		}
 
 		if (function == "multirom_disable_flash_kernel")
@@ -991,6 +1014,7 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 			int op_status = !MultiROM::disableFlashKernelAct(DataManager::GetStrValue("tw_multirom_rom_name"),
 															 DataManager::GetStrValue("tw_multirom_install_loc"));
 			operation_end(op_status, simulate);
+			return 0;
 		}
 
         if (function == "fileexists")
@@ -1003,6 +1027,7 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 				operation_end(0, simulate);
 			else
 				operation_end(1, simulate);
+			return 0;
 		}
 
 		if (function == "flash")
@@ -1112,6 +1137,13 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 								} else {
 									skip = true;
 								}
+							} else if (wipe_path == "INTERNAL") {
+								if (!PartitionManager.Wipe_Media_From_Data()) {
+									ret_val = false;
+									break;
+								} else {
+									skip = true;
+								}
 							}
 							if (!skip) {
 								if (!PartitionManager.Wipe_By_Path(wipe_path)) {
@@ -1161,6 +1193,7 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 			} else
 				PartitionManager.Update_System_Details();
 			operation_end(0, simulate);
+			return 0;
 		}
         if (function == "nandroid")
         {
@@ -1191,12 +1224,13 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 					return -1;
 				}
 			}
+			DataManager::SetValue("tw_encrypt_backup", 0);
 			if (ret == false)
 				ret = 1; // 1 for failure
 			else
 				ret = 0; // 0 for success
-            	operation_end(ret, simulate);
-		return 0;
+            operation_end(ret, simulate);
+			return 0;
         }
 		if (function == "fixpermissions")
 		{
@@ -1524,6 +1558,7 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 					DataManager::SetValue("tw_page_done", 1);
 				}
 			}
+			return 0;
 		}
 		if (function == "installsu")
 		{
@@ -1555,13 +1590,35 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 			operation_end(op_status, simulate);
 			return 0;
 		}
+		if (function == "decrypt_backup")
+		{
+			int op_status = 0;
+
+			operation_start("Try Restore Decrypt");
+			if (simulate) {
+				simulate_progress_bar();
+			} else {
+				string Restore_Path, Filename, Password;
+				DataManager::GetValue("tw_restore", Restore_Path);
+				Restore_Path += "/";
+				DataManager::GetValue("tw_restore_password", Password);
+				if (TWFunc::Try_Decrypting_Backup(Restore_Path, Password))
+					op_status = 0; // success
+				else
+					op_status = 1; // fail
+			}
+
+			operation_end(op_status, simulate);
+			return 0;
+		}
     }
     else
     {
-        pthread_t t;
-        pthread_create(&t, NULL, thread_start, this);
+		pthread_t t;
+		pthread_create(&t, NULL, thread_start, this);
         return 0;
     }
+	LOGERR("Unknown action '%s'\n", function.c_str());
     return -1;
 }
 

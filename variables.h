@@ -17,7 +17,7 @@
 #ifndef _VARIABLES_HEADER_
 #define _VARIABLES_HEADER_
 
-#define TW_VERSION_STR              "2.5.0.0"
+#define TW_VERSION_STR              "2.6.0.0"
 
 #define TW_USE_COMPRESSION_VAR      "tw_use_compression"
 #define TW_FILENAME                 "tw_filename"
@@ -151,6 +151,8 @@
 #define TW_DATA_BLK_DEVICE          "tw_data_blk_device"  // Original block device - not decrypted
 #define TW_SDEXT_DISABLE_EXT4       "tw_sdext_disable_ext4"
 #define TW_MILITARY_TIME            "tw_military_time"
+#define TW_ROTATION                 "tw_rotation"
+#define TW_ENABLE_ROTATION          "tw_enable_rotation"
 
 // Also used:
 //   tw_boot_is_mountable
@@ -166,6 +168,7 @@
 
 // Max archive size for tar backups before we split (1.5GB)
 #define MAX_ARCHIVE_SIZE 1610612736LLU
+//#define MAX_ARCHIVE_SIZE 52428800LLU // 50MB split for testing
 
 #ifndef CUSTOM_LUN_FILE
 #define CUSTOM_LUN_FILE "/sys/devices/platform/usb_mass_storage/lun%d/file"
