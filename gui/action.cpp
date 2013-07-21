@@ -744,6 +744,7 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 		DataManager::SetValue("tw_multirom_enable_adb", cfg.enable_adb);
 		DataManager::SetValue("tw_multirom_hide_internal", cfg.hide_internal);
 		DataManager::SetValue("tw_multirom_int_display_name", cfg.int_display_name);
+		DataManager::SetValue("tw_multirom_rotation", cfg.rotation);
 
 		DataManager::SetValue("tw_multirom_roms", MultiROM::listRoms());
 		return gui_changePage("multirom_settings");
@@ -763,6 +764,7 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 		cfg.enable_adb = DataManager::GetIntValue("tw_multirom_enable_adb");
 		cfg.hide_internal = DataManager::GetIntValue("tw_multirom_hide_internal");
 		cfg.int_display_name = DataManager::GetStrValue("tw_multirom_int_display_name");
+		cfg.rotation = DataManager::GetIntValue("tw_multirom_rotation");
 
 		MultiROM::saveConfig(cfg);
 		return gui_changePage("multirom_main");
@@ -942,10 +944,20 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 			operation_start("Flashing");
 			int op_status = 0;
 
-			if(!MultiROM::flashZip(DataManager::GetStrValue("tw_multirom_rom_name"),
-									DataManager::GetStrValue("tw_filename")))
-			{
+			std::string name = DataManager::GetStrValue("tw_multirom_rom_name");
+			std::string boot = MultiROM::getRomsPath() + name + "/boot.img";
+			int had_boot = access(boot.c_str(), F_OK) >= 0;
+
+			if (!MultiROM::flashZip(name, DataManager::GetStrValue("tw_filename")))
 				op_status = 1;
+
+			if(!had_boot && MultiROM::compareFiles(BOOT_DEV, boot.c_str()))
+				unlink(boot.c_str());
+			else if(op_status == 0)
+			{
+				DataManager::SetValue("tw_multirom_share_kernel", 0);
+				if(!MultiROM::extractBootForROM(MultiROM::getRomsPath() + name))
+					op_status = 1;
 			}
 
 			PartitionManager.Update_System_Details();
