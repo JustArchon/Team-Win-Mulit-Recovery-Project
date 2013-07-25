@@ -50,19 +50,6 @@
 	#include "cutils/properties.h"
 #endif
 
-//extern RecoveryUI* ui;
-
-TWPartitionManager::TWPartitionManager()
-{
-	pthread_mutex_init(&mDetailsMutex, NULL);
-}
-
-TWPartitionManager::~TWPartitionManager()
-{
-	pthread_mutex_destroy(&mDetailsMutex);
-}
-
-
 int TWPartitionManager::Process_Fstab(string Fstab_Filename, bool Display_Error) {
 	FILE *fstabFile;
 	char fstab_line[MAX_FSTAB_LINE_LENGTH];
@@ -1221,23 +1208,19 @@ void TWPartitionManager::Refresh_Sizes(void) {
 	return;
 }
 
-void TWPartitionManager::Update_Partition_Details(int update_size, int *data_size)
-{
+void TWPartitionManager::Update_System_Details(void) {
 	std::vector<TWPartition*>::iterator iter;
+	int data_size = 0;
 
 	gui_print("Updating partition details...\n");
 	for (iter = Partitions.begin(); iter != Partitions.end(); iter++) {
 		if ((*iter)->Can_Be_Mounted) {
-
-			if(update_size)
-				(*iter)->Update_Size(true);
-
+			(*iter)->Update_Size(true);
 			if ((*iter)->Mount_Point == "/system") {
 				int backup_display_size = (int)((*iter)->Backup_Size / 1048576LLU);
 				DataManager::SetValue(TW_BACKUP_SYSTEM_SIZE, backup_display_size);
 			} else if ((*iter)->Mount_Point == "/data" || (*iter)->Mount_Point == "/datadata") {
-				if(data_size)
-					*data_size += (int)((*iter)->Backup_Size / 1048576LLU);
+				data_size += (int)((*iter)->Backup_Size / 1048576LLU);
 			} else if ((*iter)->Mount_Point == "/cache") {
 				int backup_display_size = (int)((*iter)->Backup_Size / 1048576LLU);
 				DataManager::SetValue(TW_BACKUP_CACHE_SIZE, backup_display_size);
@@ -1303,7 +1286,7 @@ void TWPartitionManager::Update_Partition_Details(int update_size, int *data_siz
 				} else
 					DataManager::SetValue(TW_HAS_RECOVERY_PARTITION, 1);
 			} else if ((*iter)->Mount_Point == "/data") {
-				*data_size += (int)((*iter)->Backup_Size / 1048576LLU);
+				data_size += (int)((*iter)->Backup_Size / 1048576LLU);
 			}
 #ifdef SP1_NAME
 			if ((*iter)->Backup_Name == EXPAND(SP1_NAME)) {
@@ -1325,25 +1308,6 @@ void TWPartitionManager::Update_Partition_Details(int update_size, int *data_siz
 #endif
 		}
 	}
-}
-
-void TWPartitionManager::Update_System_Details(void) {
-	if(pthread_mutex_trylock(&mDetailsMutex) != 0)
-	{
-		gui_print("Waiting for previous update to finish...\n");
-		pthread_mutex_lock(&mDetailsMutex);
-	}
-
-	int data_size = 0;
-
-	gui_print("Updating partition details...\n");
-
-	// do this twice - first without updating size just to enumerate partitions,
-	// and second to get actual size. This is done because updating free space
-	// takes lot of time and we wanna enumerate as soon as possible
-	Update_Partition_Details(0, NULL);
-	Update_Partition_Details(1, &data_size);
-
 	DataManager::SetValue(TW_BACKUP_DATA_SIZE, data_size);
 	string current_storage_path = DataManager::GetCurrentStoragePath();
 	TWPartition* FreeStorage = Find_Partition_By_Path(current_storage_path);
@@ -1386,7 +1350,6 @@ void TWPartitionManager::Update_System_Details(void) {
 	}
 	if (!Write_Fstab())
 		LOGERR("Error creating fstab\n");
-	pthread_mutex_unlock(&mDetailsMutex);
 	return;
 }
 
