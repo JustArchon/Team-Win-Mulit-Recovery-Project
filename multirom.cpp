@@ -554,8 +554,10 @@ bool MultiROM::flashZip(std::string rom, std::string file)
 	gui_print("Flashing ZIP file %s\n", file.c_str());
 	gui_print("ROM: %s\n", rom.c_str());
 
+	bool format_system = false;
+
 	gui_print("Preparing ZIP file...\n");
-	if(!prepareZIP(file))
+	if(!prepareZIP(file, format_system))
 		return false;
 
 	gui_print("Changing mountpoints\n");
@@ -576,6 +578,12 @@ bool MultiROM::flashZip(std::string rom, std::string file)
 	{
 		restoreMounts();
 		return false;
+	}
+
+	if(format_system)
+	{
+		gui_print("Clearing ROM's /system dir");
+		system("rm -rf /system/*");
 	}
 
 	int wipe_cache = 0;
@@ -615,7 +623,7 @@ bool MultiROM::skipLine(const char *line)
 	return false;
 }
 
-bool MultiROM::prepareZIP(std::string& file)
+bool MultiROM::prepareZIP(std::string& file, bool& format_system)
 {
 	bool res = false;
 
@@ -678,7 +686,15 @@ bool MultiROM::prepareZIP(std::string& file)
 			fputc('\n', new_script);
 		}
 		else
+		{
 			changed = true;
+
+			if (strstr(token, "format") == token &&
+				(strstr(token, "/system") || strstr(token, "/dev/block/platform/sdhci-tegra.3/by-name/APP")))
+			{
+				format_system = true;
+			}
+		}
 		token = strtok(NULL, "\n");
 	}
 
@@ -748,6 +764,7 @@ bool MultiROM::injectBoot(std::string img_path)
 	system(cmd);
 	system("chmod 750 /tmp/boot/rd/init");
 	system("ln -sf ../main_init /tmp/boot/rd/sbin/ueventd");
+	system("ln -sf ../main_init /tmp/boot/rd/sbin/watchdogd");
 
 	// COMPRESS RAMDISK
 	gui_print("Compressing ramdisk...\n");
@@ -1088,8 +1105,13 @@ bool MultiROM::extractBootForROM(std::string base)
 		return false;
 	}
 
-	// copy rc files
-	static const char *cp_f[] = { "*.rc", "default.prop", "init", "main_init", NULL };
+	// copy needed files
+	static const char *cp_f[] = {
+		"*.rc", "default.prop", "init", "main_init",
+		// Since Android 4.3 - for SELinux
+		"file_contexts", "property_contexts", "seapp_contexts", "sepolicy",
+		NULL
+	};
 	for(int i = 0; cp_f[i]; ++i)
 		system_args("cp -a /tmp/boot/%s \"%s/boot/\"", cp_f[i], base.c_str());
 
@@ -1099,6 +1121,7 @@ bool MultiROM::extractBootForROM(std::string base)
 		system_args("mv \"%s/boot/init\" \"%s/boot/main_init\"", base.c_str(), base.c_str());
 
 	system("rm -r /tmp/boot");
+	system_args("cd \"%s/boot\" && rm cmdline ramdisk.gz zImage", base.c_str());
 
 	if (DataManager::GetIntValue("tw_multirom_share_kernel") == 0)
 	{
