@@ -199,7 +199,7 @@ public:
 	virtual int Format_Data();                                                // Really formats data on /data/media devices -- also removes encryption
 	virtual int Wipe_Media_From_Data();                                       // Removes and recreates the media folder on /data/media devices
 	virtual void Refresh_Sizes();                                             // Refreshes size data of partitions
-	virtual void Update_System_Details();                                     // Updates fstab, file systems, sizes, etc.
+	virtual void Update_System_Details(bool update_data_size = false);        // Updates fstab, file systems, sizes, etc.
 	virtual int Decrypt_Device(string Password);                              // Attempt to decrypt any encrypted partitions
 	virtual int usb_storage_enable(void);                                     // Enable USB storage mode
 	virtual int usb_storage_disable(void);                                    // Disable USB storage mode

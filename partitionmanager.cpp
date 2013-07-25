@@ -653,7 +653,7 @@ int TWPartitionManager::Run_Backup(void) {
 
 	time(&total_start);
 
-	Update_System_Details();
+	Update_System_Details(true);
 
 	if (!Mount_Current_Storage(true))
 		return false;
@@ -1208,14 +1208,17 @@ void TWPartitionManager::Refresh_Sizes(void) {
 	return;
 }
 
-void TWPartitionManager::Update_System_Details(void) {
+void TWPartitionManager::Update_System_Details(bool update_data_size) {
 	std::vector<TWPartition*>::iterator iter;
 	int data_size = 0;
 
 	gui_print("Updating partition details...\n");
 	for (iter = Partitions.begin(); iter != Partitions.end(); iter++) {
-		if ((*iter)->Can_Be_Mounted) {
-			(*iter)->Update_Size(true);
+		if ((*iter)->Can_Be_Mounted)
+		{
+			if(update_data_size || (*iter)->Mount_Point != "/data")
+				(*iter)->Update_Size(true);
+
 			if ((*iter)->Mount_Point == "/system") {
 				int backup_display_size = (int)((*iter)->Backup_Size / 1048576LLU);
 				DataManager::SetValue(TW_BACKUP_SYSTEM_SIZE, backup_display_size);

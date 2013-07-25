@@ -1218,7 +1218,7 @@ int GUIAction::doAction(Action action, int isThreaded /* = 0 */)
 			if (simulate) {
 				simulate_progress_bar();
 			} else
-				PartitionManager.Update_System_Details();
+				PartitionManager.Update_System_Details(true);
 			operation_end(0, simulate);
 			return 0;
 		}
