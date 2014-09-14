@@ -1259,11 +1259,13 @@ bool MultiROM::injectBoot(std::string img_path, bool only_if_older)
 	// EXTRACT BOOTIMG
 	gui_print("Extracting boot image...\n");
 	system("rm -r /tmp/boot; mkdir /tmp/boot");
+	system_args("mr_unloki.sh \"%s\"", img_path.c_str());
 
 	if (libbootimg_init_load(&img, img_path.c_str(), LIBBOOTIMG_LOAD_ALL) < 0 ||
 		libbootimg_dump_ramdisk(&img, "/tmp/boot/initrd.img") < 0)
 	{
 		gui_print("Failed to unpack boot img!\n");
+		system_args("mr_loki.sh \"%s\"", img_path.c_str());
 		goto fail;
 	}
 
@@ -1275,6 +1277,7 @@ bool MultiROM::injectBoot(std::string img_path, bool only_if_older)
 	if(rd_cmpr == -1 || access("/tmp/boot/rd/init", F_OK) < 0)
 	{
 		gui_print("Failed to decompress ramdisk!\n");
+		system_args("mr_loki.sh \"%s\"", img_path.c_str());
 		goto fail;
 	}
 
@@ -1288,6 +1291,7 @@ bool MultiROM::injectBoot(std::string img_path, bool only_if_older)
 			gui_print("No need to inject bootimg, it has the newest trampoline (v%d)\n", tr_rd_ver);
 			libbootimg_destroy(&img);
 			system("rm -r /tmp/boot");
+			system_args("mr_loki.sh \"%s\"", img_path.c_str());
 			return true;
 		}
 	}
@@ -1309,13 +1313,17 @@ bool MultiROM::injectBoot(std::string img_path, bool only_if_older)
 	// COMPRESS RAMDISK
 	gui_print("Compressing ramdisk...\n");
 	if(!compressRamdisk("/tmp/boot/rd", "/tmp/boot/initrd.img", rd_cmpr))
+	{
+		system_args("mr_loki.sh \"%s\"", img_path.c_str());	
 		goto fail;
+	}
 
 	// PACK BOOT IMG
 	gui_print("Packing boot image\n");
 	if(libbootimg_load_ramdisk(&img, "/tmp/boot/initrd.img") < 0)
 	{
 		gui_print("Failed to load modified ramdisk!\n");
+		system_args("mr_loki.sh \"%s\"", img_path.c_str());
 		goto fail;
 	}
 
@@ -1329,14 +1337,17 @@ bool MultiROM::injectBoot(std::string img_path, bool only_if_older)
 	if(libbootimg_write_img_and_destroy(&img, "/tmp/newboot.img") < 0)
 	{
 		gui_print("Failed to pack boot image!\n");
+		system_args("mr_loki.sh \"%s\"", img_path.c_str());
 		return false;
 	}
 	system("rm -r /tmp/boot");
 
 	if(img_path == m_boot_dev)
-		system_args("dd bs=4096 if=/tmp/newboot.img of=\"%s\"", m_boot_dev.c_str());
+	{
+		system_args("mr_loki.sh \"%s\"", m_boot_dev.c_str());
+	}
 	else
-		system_args("cp /tmp/newboot.img \"%s\"", img_path.c_str());
+		system_args("mr_loki.sh \"%s\"", img_path.c_str());
 	return true;
 
 fail:
@@ -1645,6 +1656,7 @@ bool MultiROM::extractBootForROM(std::string base)
 	struct bootimg img;
 
 	gui_print("Extracting contents of boot.img...\n");
+	system_args("unloki.sh \"%s\"", base.c_str());
 	if(libbootimg_init_load(&img, (base + "/boot.img").c_str(), LIBBOOTIMG_LOAD_RAMDISK) < 0)
 	{
 		gui_print("Failed to load bootimg!\n");
