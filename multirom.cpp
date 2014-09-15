@@ -116,7 +116,7 @@ void MultiROM::findPath()
 		return;
 	}
 
-	m_boot_dev = boot->Actual_Block_Device;
+	m_boot_dev = "/dev/block/platform/msm_sdcc.1/by-name/boot";
 
 	TWPartition *fw = PartitionManager.Find_Partition_By_Path("/firmware");
 	m_has_firmware = (fw && fw->Current_File_System == "vfat");
@@ -1602,7 +1602,7 @@ bool MultiROM::extractBootForROM(std::string base)
 	struct bootimg img;
 
 	gui_print("Extracting contents of boot.img...\n");
-	system_args("unloki.sh \"%s\"", base.c_str());
+	system_args("mr_unloki.sh \"%s\"", base.c_str());
 	if(libbootimg_init_load(&img, (base + "/boot.img").c_str(), LIBBOOTIMG_LOAD_RAMDISK) < 0)
 	{
 		gui_print("Failed to load bootimg!\n");
