@@ -14,9 +14,9 @@
 	</include>
 
 	<resources>
-		<resource name="font" type="font" filename="Roboto-Condensed-12" />
-		<resource name="mediumfont" type="font" filename="Roboto-Condensed-12" />
-		<resource name="filelist" type="font" filename="Roboto-Condensed-12" />
+		<resource name="font" type="font" filename="RobotoCondensed-Regular.ttf" size="12" fallback="Roboto-Condensed-12" />
+		<resource name="mediumfont" type="font" filename="RobotoCondensed-Regular.ttf" size="12" fallback="Roboto-Condensed-12" />
+		<resource name="filelist" type="font" filename="RobotoCondensed-Regular.ttf" size="12" fallback="Roboto-Condensed-12" />
 		<resource name="top_bar" type="image" filename="top-bar.jpg" />
 		<resource name="main_button" type="image" filename="menu-button" />
 		<resource name="file_icon" type="image" filename="file" />
@@ -75,6 +75,7 @@
 		<variable name="row12_text_y" value="192" />
 		<variable name="row13_text_y" value="208" />
 		<variable name="zip_status_y" value="224" />
+		<variable name="flash_list_height" value="120" />
 		<variable name="backup_text_y" value="60" />
 		<variable name="tz_set_y" value="200" />
 		<variable name="tz_current_y" value="184" />
@@ -211,7 +212,7 @@
 
 			<object type="text" color="%text_color%">
 				<font resource="font" />
-				<placement x="3" y="3" />
+				<placement x="1" y="3" />
 				<text>TWRP v%tw_version%</text>
 			</object>
 
@@ -224,7 +225,7 @@
 
 			<object type="text" color="%text_color%">
 				<font resource="font" />
-				<placement x="100" y="3" />
+				<placement x="89" y="3" />
 				<text>%tw_time%</text>
 			</object>
 
@@ -237,6 +238,15 @@
 					<condition var1="tw_battery" op="<" var2="101" />
 				</conditions>
 				<text>%tw_battery%</text>
+			</object>
+
+			<object type="text" color="%text_color%">
+				<font resource="font" />
+				<placement x="145" y="3" />
+				<conditions>
+					<condition var1="tw_no_cpu_temp" var2="0" />
+				</conditions>
+				<text>%tw_cpu_temp% C</text>
 			</object>
 		</template>
 
@@ -263,7 +273,7 @@
 
 			<object type="action">
 				<touch key="power" />
-				<action function="overlay">lock</action>
+				<action function="key">back</action>
 			</object>
 
 			<object type="action">

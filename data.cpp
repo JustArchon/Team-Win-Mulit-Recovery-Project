@@ -46,6 +46,7 @@
 #include "gui/blanktimer.hpp"
 #endif
 #include "find_file.hpp"
+#include "set_metadata.h"
 
 #ifdef TW_USE_MODEL_HARDWARE_ID_FOR_DEVICE_ID
 	#include "cutils/properties.h"
@@ -58,7 +59,6 @@
 extern "C"
 {
 	#include "twcommon.h"
-	#include "data.h"
 	#include "gui/pages.h"
 	#include "minuitwrp/minui.h"
 	void gui_notifyVarChange(const char *name, const char* value);
@@ -72,9 +72,10 @@ map<string, DataManager::TStrIntPair>   DataManager::mValues;
 map<string, string>                     DataManager::mConstValues;
 string                                  DataManager::mBackingFile;
 int                                     DataManager::mInitialized = 0;
-#ifndef TW_NO_SCREEN_TIMEOUT
-extern blanktimer blankTimer;
-#endif
+
+extern bool datamedia;
+
+pthread_mutex_t DataManager::m_valuesLock = PTHREAD_RECURSIVE_MUTEX_INITIALIZER;
 
 // Device ID functions
 void DataManager::sanitize_device_id(char* device_id) {
@@ -218,7 +219,10 @@ void DataManager::get_device_id(void) {
 
 int DataManager::ResetDefaults()
 {
+	pthread_mutex_lock(&m_valuesLock);
 	mValues.clear();
+	pthread_mutex_unlock(&m_valuesLock);
+
 	mConstValues.clear();
 	SetDefaultValues();
 	return 0;
@@ -267,6 +271,8 @@ int DataManager::LoadValues(const string filename)
 
 		map<string, TStrIntPair>::iterator pos;
 
+		pthread_mutex_lock(&m_valuesLock);
+
 		pos = mValues.find(Name);
 		if (pos != mValues.end())
 		{
@@ -275,6 +281,9 @@ int DataManager::LoadValues(const string filename)
 		}
 		else
 			mValues.insert(TNameValuePair(Name, TStrIntPair(Value, 1)));
+
+		pthread_mutex_unlock(&m_valuesLock);
+
 #ifndef TW_NO_SCREEN_TIMEOUT
 		if (Name == "tw_screen_timeout_secs")
 			blankTimer.setTime(atoi(Value.c_str()));
@@ -316,6 +325,8 @@ int DataManager::SaveValues()
 	int file_version = FILE_VERSION;
 	fwrite(&file_version, 1, sizeof(int), out);
 
+	pthread_mutex_lock(&m_valuesLock);
+
 	map<string, TStrIntPair>::iterator iter;
 	for (iter = mValues.begin(); iter != mValues.end(); ++iter)
 	{
@@ -330,7 +341,11 @@ int DataManager::SaveValues()
 			fwrite(iter->second.first.c_str(), 1, length, out);
 		}
 	}
+
+	pthread_mutex_unlock(&m_valuesLock);
+
 	fclose(out);
+	tw_set_default_metadata(mBackingFile.c_str());
 #endif // ifdef TW_OEM_BUILD
 	return 0;
 }
@@ -352,7 +367,6 @@ int DataManager::GetValue(const string varName, string& value)
 	// Handle magic values
 	if (GetMagicValue(localStr, value) == 0)
 		return 0;
-
 	map<string, string>::iterator constPos;
 	constPos = mConstValues.find(localStr);
 	if (constPos != mConstValues.end())
@@ -361,12 +375,16 @@ int DataManager::GetValue(const string varName, string& value)
 		return 0;
 	}
 
+	pthread_mutex_lock(&m_valuesLock);
 	map<string, TStrIntPair>::iterator pos;
 	pos = mValues.find(localStr);
-	if (pos == mValues.end())
+	if (pos == mValues.end()){
+		pthread_mutex_unlock(&m_valuesLock);
 		return -1;
+	}
 
 	value = pos->second.first;
+	pthread_mutex_unlock(&m_valuesLock);
 	return 0;
 }
 
@@ -403,25 +421,6 @@ unsigned long long DataManager::GetValue(const string varName, unsigned long lon
 	return 0;
 }
 
-// This is a dangerous function. It will create the value if it doesn't exist so it has a valid c_str
-string& DataManager::GetValueRef(const string varName)
-{
-	if (!mInitialized)
-		SetDefaultValues();
-
-	map<string, string>::iterator constPos;
-	constPos = mConstValues.find(varName);
-	if (constPos != mConstValues.end())
-		return constPos->second;
-
-	map<string, TStrIntPair>::iterator pos;
-	pos = mValues.find(varName);
-	if (pos == mValues.end())
-		pos = (mValues.insert(TNameValuePair(varName, TStrIntPair("", 0)))).first;
-
-	return pos->second.first;
-}
-
 // This function will return an empty string if the value doesn't exist
 string DataManager::GetStrValue(const string varName)
 {
@@ -454,6 +453,8 @@ int DataManager::SetValue(const string varName, string value, int persist /* = 0
 	if (constChk != mConstValues.end())
 		return -1;
 
+	pthread_mutex_lock(&m_valuesLock);
+
 	map<string, TStrIntPair>::iterator pos;
 	pos = mValues.find(varName);
 	if (pos == mValues.end())
@@ -463,6 +464,8 @@ int DataManager::SetValue(const string varName, string value, int persist /* = 0
 
 	if (pos->second.second != 0)
 		SaveValues();
+
+	pthread_mutex_unlock(&m_valuesLock);
 
 #ifndef TW_NO_SCREEN_TIMEOUT
 	if (varName == "tw_screen_timeout_secs") {
@@ -532,13 +535,15 @@ void DataManager::DumpValues()
 {
 	map<string, TStrIntPair>::iterator iter;
 	gui_print("Data Manager dump - Values with leading X are persisted.\n");
+	pthread_mutex_lock(&m_valuesLock);
 	for (iter = mValues.begin(); iter != mValues.end(); ++iter)
 		gui_print("%c %s=%s\n", iter->second.second ? 'X' : ' ', iter->first.c_str(), iter->second.first.c_str());
+	pthread_mutex_unlock(&m_valuesLock);
 }
 
 void DataManager::update_tz_environment_variables(void)
 {
-	setenv("TZ", DataManager_GetStrValue(TW_TIME_ZONE_VAR), 1);
+	setenv("TZ", GetStrValue(TW_TIME_ZONE_VAR).c_str(), 1);
 	tzset();
 }
 
@@ -586,6 +591,8 @@ void DataManager::SetDefaultValues()
 
 	get_device_id();
 
+	pthread_mutex_lock(&m_valuesLock);
+
 	mInitialized = 1;
 
 	mConstValues.insert(make_pair("true", "1"));
@@ -620,133 +627,8 @@ void DataManager::SetDefaultValues()
 	mConstValues.insert(make_pair(TW_SHOW_DUMLOCK, "0"));
 #endif
 
-#ifdef TW_INTERNAL_STORAGE_PATH
-	LOGINFO("Internal path defined: '%s'\n", EXPAND(TW_INTERNAL_STORAGE_PATH));
-	mValues.insert(make_pair(TW_USE_EXTERNAL_STORAGE, make_pair("0", 1)));
-	mConstValues.insert(make_pair(TW_HAS_INTERNAL, "1"));
-	mValues.insert(make_pair(TW_INTERNAL_PATH, make_pair(EXPAND(TW_INTERNAL_STORAGE_PATH), 0)));
-	mConstValues.insert(make_pair(TW_INTERNAL_LABEL, EXPAND(TW_INTERNAL_STORAGE_MOUNT_POINT)));
-	path.clear();
-	path = "/";
-	path += EXPAND(TW_INTERNAL_STORAGE_MOUNT_POINT);
-	mConstValues.insert(make_pair(TW_INTERNAL_MOUNT, path));
-	#ifdef TW_EXTERNAL_STORAGE_PATH
-		LOGINFO("External path defined: '%s'\n", EXPAND(TW_EXTERNAL_STORAGE_PATH));
-		// Device has dual storage
-		mConstValues.insert(make_pair(TW_HAS_DUAL_STORAGE, "1"));
-		mConstValues.insert(make_pair(TW_HAS_EXTERNAL, "1"));
-		mConstValues.insert(make_pair(TW_EXTERNAL_PATH, EXPAND(TW_EXTERNAL_STORAGE_PATH)));
-		mConstValues.insert(make_pair(TW_EXTERNAL_LABEL, EXPAND(TW_EXTERNAL_STORAGE_MOUNT_POINT)));
-		mValues.insert(make_pair(TW_ZIP_EXTERNAL_VAR, make_pair(EXPAND(TW_EXTERNAL_STORAGE_PATH), 1)));
-		path.clear();
-		path = "/";
-		path += EXPAND(TW_EXTERNAL_STORAGE_MOUNT_POINT);
-		mConstValues.insert(make_pair(TW_EXTERNAL_MOUNT, path));
-		if (strcmp(EXPAND(TW_EXTERNAL_STORAGE_PATH), "/sdcard") == 0) {
-			mValues.insert(make_pair(TW_ZIP_INTERNAL_VAR, make_pair("/emmc", 1)));
-		} else {
-			mValues.insert(make_pair(TW_ZIP_INTERNAL_VAR, make_pair("/sdcard", 1)));
-		}
-	#else
-		LOGINFO("Just has internal storage.\n");
-		// Just has internal storage
-		mValues.insert(make_pair(TW_ZIP_INTERNAL_VAR, make_pair("/sdcard", 1)));
-		mConstValues.insert(make_pair(TW_HAS_DUAL_STORAGE, "0"));
-		mConstValues.insert(make_pair(TW_HAS_EXTERNAL, "0"));
-		mConstValues.insert(make_pair(TW_EXTERNAL_PATH, "0"));
-		mConstValues.insert(make_pair(TW_EXTERNAL_MOUNT, "0"));
-		mConstValues.insert(make_pair(TW_EXTERNAL_LABEL, "0"));
-	#endif
-#else
-	#ifdef RECOVERY_SDCARD_ON_DATA
-		#ifdef TW_EXTERNAL_STORAGE_PATH
-			LOGINFO("Has /data/media + external storage in '%s'\n", EXPAND(TW_EXTERNAL_STORAGE_PATH));
-			// Device has /data/media + external storage
-			mConstValues.insert(make_pair(TW_HAS_DUAL_STORAGE, "1"));
-		#else
-			LOGINFO("Single storage only -- data/media.\n");
-			// Device just has external storage
-			mConstValues.insert(make_pair(TW_HAS_DUAL_STORAGE, "0"));
-			mConstValues.insert(make_pair(TW_HAS_EXTERNAL, "0"));
-		#endif
-	#else
-		LOGINFO("Single storage only.\n");
-		// Device just has external storage
-		mConstValues.insert(make_pair(TW_HAS_DUAL_STORAGE, "0"));
-	#endif
-	#ifdef RECOVERY_SDCARD_ON_DATA
-		LOGINFO("Device has /data/media defined.\n");
-		// Device has /data/media
-		mConstValues.insert(make_pair(TW_USE_EXTERNAL_STORAGE, "0"));
-		mConstValues.insert(make_pair(TW_HAS_INTERNAL, "1"));
-		mValues.insert(make_pair(TW_INTERNAL_PATH, make_pair("/data/media", 0)));
-		mConstValues.insert(make_pair(TW_INTERNAL_MOUNT, "/data"));
-		mConstValues.insert(make_pair(TW_INTERNAL_LABEL, "data"));
-		#ifdef TW_EXTERNAL_STORAGE_PATH
-			if (strcmp(EXPAND(TW_EXTERNAL_STORAGE_PATH), "/sdcard") == 0) {
-				mValues.insert(make_pair(TW_ZIP_INTERNAL_VAR, make_pair("/emmc", 1)));
-			} else {
-				mValues.insert(make_pair(TW_ZIP_INTERNAL_VAR, make_pair("/sdcard", 1)));
-			}
-		#else
-			mValues.insert(make_pair(TW_ZIP_INTERNAL_VAR, make_pair("/sdcard", 1)));
-		#endif
-	#else
-		LOGINFO("No internal storage defined.\n");
-		// Device has no internal storage
-		mConstValues.insert(make_pair(TW_USE_EXTERNAL_STORAGE, "1"));
-		mConstValues.insert(make_pair(TW_HAS_INTERNAL, "0"));
-		mValues.insert(make_pair(TW_INTERNAL_PATH, make_pair("0", 0)));
-		mConstValues.insert(make_pair(TW_INTERNAL_MOUNT, "0"));
-		mConstValues.insert(make_pair(TW_INTERNAL_LABEL, "0"));
-	#endif
-	#ifdef TW_EXTERNAL_STORAGE_PATH
-		LOGINFO("Only external path defined: '%s'\n", EXPAND(TW_EXTERNAL_STORAGE_PATH));
-		// External has custom definition
-		mConstValues.insert(make_pair(TW_HAS_EXTERNAL, "1"));
-		mConstValues.insert(make_pair(TW_EXTERNAL_PATH, EXPAND(TW_EXTERNAL_STORAGE_PATH)));
-		mConstValues.insert(make_pair(TW_EXTERNAL_LABEL, EXPAND(TW_EXTERNAL_STORAGE_MOUNT_POINT)));
-		mValues.insert(make_pair(TW_ZIP_EXTERNAL_VAR, make_pair(EXPAND(TW_EXTERNAL_STORAGE_PATH), 1)));
-		path.clear();
-		path = "/";
-		path += EXPAND(TW_EXTERNAL_STORAGE_MOUNT_POINT);
-		mConstValues.insert(make_pair(TW_EXTERNAL_MOUNT, path));
-	#else
-		#ifndef RECOVERY_SDCARD_ON_DATA
-			LOGINFO("No storage defined, defaulting to /sdcard.\n");
-			// Standard external definition
-			mConstValues.insert(make_pair(TW_HAS_EXTERNAL, "1"));
-			mConstValues.insert(make_pair(TW_EXTERNAL_PATH, "/sdcard"));
-			mConstValues.insert(make_pair(TW_EXTERNAL_MOUNT, "/sdcard"));
-			mConstValues.insert(make_pair(TW_EXTERNAL_LABEL, "sdcard"));
-			mValues.insert(make_pair(TW_ZIP_EXTERNAL_VAR, make_pair("/sdcard", 1)));
-		#endif
-	#endif
-#endif
-
-#ifdef TW_DEFAULT_EXTERNAL_STORAGE
-	SetValue(TW_USE_EXTERNAL_STORAGE, 1);
-	printf("TW_DEFAULT_EXTERNAL_STORAGE := true\n");
-#endif
-
-#ifdef RECOVERY_SDCARD_ON_DATA
-	if (PartitionManager.Mount_By_Path("/data", false) && TWFunc::Path_Exists("/data/media/0"))
-		SetValue(TW_INTERNAL_PATH, "/data/media/0");
-#endif
 	str = GetCurrentStoragePath();
-#ifdef RECOVERY_SDCARD_ON_DATA
-	#ifndef TW_EXTERNAL_STORAGE_PATH
-		SetValue(TW_ZIP_LOCATION_VAR, "/sdcard", 1);
-	#else
-		if (strcmp(EXPAND(TW_EXTERNAL_STORAGE_PATH), "/sdcard") == 0) {
-			SetValue(TW_ZIP_LOCATION_VAR, "/emmc", 1);
-		} else {
-			SetValue(TW_ZIP_LOCATION_VAR, "/sdcard", 1);
-		}
-	#endif
-#else
 	SetValue(TW_ZIP_LOCATION_VAR, str.c_str(), 1);
-#endif
 	str += "/TWRP/BACKUPS/";
 
 	string dev_id;
@@ -754,34 +636,6 @@ void DataManager::SetDefaultValues()
 
 	str += dev_id;
 	SetValue(TW_BACKUPS_FOLDER_VAR, str, 0);
-
-#ifdef SP1_DISPLAY_NAME
-	printf("SP1_DISPLAY_NAME := %s\n", EXPAND(SP1_DISPLAY_NAME));
-	if (strlen(EXPAND(SP1_DISPLAY_NAME))) mConstValues.insert(make_pair(TW_SP1_PARTITION_NAME_VAR, EXPAND(SP1_DISPLAY_NAME)));
-#else
-	#ifdef SP1_NAME
-		printf("SP1_NAME := %s\n", EXPAND(SP1_NAME));
-		if (strlen(EXPAND(SP1_NAME))) mConstValues.insert(make_pair(TW_SP1_PARTITION_NAME_VAR, EXPAND(SP1_NAME)));
-	#endif
-#endif
-#ifdef SP2_DISPLAY_NAME
-	printf("SP2_DISPLAY_NAME := %s\n", EXPAND(SP2_DISPLAY_NAME));
-	if (strlen(EXPAND(SP2_DISPLAY_NAME))) mConstValues.insert(make_pair(TW_SP2_PARTITION_NAME_VAR, EXPAND(SP2_DISPLAY_NAME)));
-#else
-	#ifdef SP2_NAME
-		printf("SP2_NAME := %s\n", EXPAND(SP2_NAME));
-		if (strlen(EXPAND(SP2_NAME))) mConstValues.insert(make_pair(TW_SP2_PARTITION_NAME_VAR, EXPAND(SP2_NAME)));
-	#endif
-#endif
-#ifdef SP3_DISPLAY_NAME
-	printf("SP3_DISPLAY_NAME := %s\n", EXPAND(SP3_DISPLAY_NAME));
-	if (strlen(EXPAND(SP3_DISPLAY_NAME))) mConstValues.insert(make_pair(TW_SP3_PARTITION_NAME_VAR, EXPAND(SP3_DISPLAY_NAME)));
-#else
-	#ifdef SP3_NAME
-		printf("SP3_NAME := %s\n", EXPAND(SP3_NAME));
-		if (strlen(EXPAND(SP3_NAME))) mConstValues.insert(make_pair(TW_SP3_PARTITION_NAME_VAR, EXPAND(SP3_NAME)));
-	#endif
-#endif
 
 	mConstValues.insert(make_pair(TW_REBOOT_SYSTEM, "1"));
 #ifdef TW_NO_REBOOT_RECOVERY
@@ -800,14 +654,34 @@ void DataManager::SetDefaultValues()
 #ifdef RECOVERY_SDCARD_ON_DATA
 	printf("RECOVERY_SDCARD_ON_DATA := true\n");
 	mConstValues.insert(make_pair(TW_HAS_DATA_MEDIA, "1"));
+	mConstValues.insert(make_pair("tw_has_internal", "1"));
+	datamedia = true;
 #else
-	mConstValues.insert(make_pair(TW_HAS_DATA_MEDIA, "0"));
+	mValues.insert(make_pair(TW_HAS_DATA_MEDIA, make_pair("0", 0)));
+	mValues.insert(make_pair("tw_has_internal", make_pair("0", 0)));
 #endif
 #ifdef TW_NO_BATT_PERCENT
 	printf("TW_NO_BATT_PERCENT := true\n");
 	mConstValues.insert(make_pair(TW_NO_BATTERY_PERCENT, "1"));
 #else
 	mConstValues.insert(make_pair(TW_NO_BATTERY_PERCENT, "0"));
+#endif
+#ifdef TW_NO_CPU_TEMP
+	printf("TW_NO_CPU_TEMP := true\n");
+	mConstValues.insert(make_pair("tw_no_cpu_temp", "1"));
+#else
+	string cpu_temp_file;
+#ifdef TW_CUSTOM_CPU_TEMP_PATH
+	cpu_temp_file = EXPAND(TW_CUSTOM_CPU_TEMP_PATH);
+#else
+	cpu_temp_file = "/sys/class/thermal/thermal_zone0/temp";
+#endif
+	if (TWFunc::Path_Exists(cpu_temp_file)) {
+		mConstValues.insert(make_pair("tw_no_cpu_temp", "0"));
+	} else {
+		LOGINFO("CPU temperature file '%s' not found, disabling CPU temp.\n", cpu_temp_file.c_str());
+		mConstValues.insert(make_pair("tw_no_cpu_temp", "1"));
+	}
 #endif
 #ifdef TW_CUSTOM_POWER_BUTTON
 	printf("TW_POWER_BUTTON := %s\n", EXPAND(TW_CUSTOM_POWER_BUTTON));
@@ -874,27 +748,6 @@ void DataManager::SetDefaultValues()
 #endif
 	mConstValues.insert(make_pair(TW_MIN_SYSTEM_VAR, TW_MIN_SYSTEM_SIZE));
 	mValues.insert(make_pair(TW_BACKUP_NAME, make_pair("(Auto Generate)", 0)));
-	mValues.insert(make_pair(TW_BACKUP_SYSTEM_VAR, make_pair("1", 1)));
-	mValues.insert(make_pair(TW_BACKUP_DATA_VAR, make_pair("1", 1)));
-	mValues.insert(make_pair(TW_BACKUP_BOOT_VAR, make_pair("1", 1)));
-	mValues.insert(make_pair(TW_BACKUP_RECOVERY_VAR, make_pair("0", 1)));
-	mValues.insert(make_pair(TW_BACKUP_CACHE_VAR, make_pair("0", 1)));
-	mValues.insert(make_pair(TW_BACKUP_SP1_VAR, make_pair("0", 1)));
-	mValues.insert(make_pair(TW_BACKUP_SP2_VAR, make_pair("0", 1)));
-	mValues.insert(make_pair(TW_BACKUP_SP3_VAR, make_pair("0", 1)));
-	mValues.insert(make_pair(TW_BACKUP_ANDSEC_VAR, make_pair("0", 1)));
-	mValues.insert(make_pair(TW_BACKUP_SDEXT_VAR, make_pair("0", 1)));
-	mValues.insert(make_pair(TW_BACKUP_SYSTEM_SIZE, make_pair("0", 0)));
-	mValues.insert(make_pair(TW_BACKUP_DATA_SIZE, make_pair("0", 0)));
-	mValues.insert(make_pair(TW_BACKUP_BOOT_SIZE, make_pair("0", 0)));
-	mValues.insert(make_pair(TW_BACKUP_RECOVERY_SIZE, make_pair("0", 0)));
-	mValues.insert(make_pair(TW_BACKUP_CACHE_SIZE, make_pair("0", 0)));
-	mValues.insert(make_pair(TW_BACKUP_ANDSEC_SIZE, make_pair("0", 0)));
-	mValues.insert(make_pair(TW_BACKUP_SDEXT_SIZE, make_pair("0", 0)));
-	mValues.insert(make_pair(TW_BACKUP_SP1_SIZE, make_pair("0", 0)));
-	mValues.insert(make_pair(TW_BACKUP_SP2_SIZE, make_pair("0", 0)));
-	mValues.insert(make_pair(TW_BACKUP_SP3_SIZE, make_pair("0", 0)));
-	mValues.insert(make_pair(TW_STORAGE_FREE_SIZE, make_pair("0", 0)));
 
 	mValues.insert(make_pair(TW_REBOOT_AFTER_FLASH_VAR, make_pair("0", 1)));
 	mValues.insert(make_pair(TW_SIGNED_ZIP_VERIFY_VAR, make_pair("0", 1)));
@@ -915,12 +768,6 @@ void DataManager::SetDefaultValues()
 	mValues.insert(make_pair(TW_TIME_ZONE_GUIOFFSET, make_pair("0", 1)));
 	mValues.insert(make_pair(TW_TIME_ZONE_GUIDST, make_pair("1", 1)));
 	mValues.insert(make_pair(TW_ACTION_BUSY, make_pair("0", 0)));
-	mValues.insert(make_pair(TW_BACKUP_AVG_IMG_RATE, make_pair("15000000", 1)));
-	mValues.insert(make_pair(TW_BACKUP_AVG_FILE_RATE, make_pair("3000000", 1)));
-	mValues.insert(make_pair(TW_BACKUP_AVG_FILE_COMP_RATE, make_pair("2000000", 1)));
-	mValues.insert(make_pair(TW_RESTORE_AVG_IMG_RATE, make_pair("15000000", 1)));
-	mValues.insert(make_pair(TW_RESTORE_AVG_FILE_RATE, make_pair("3000000", 1)));
-	mValues.insert(make_pair(TW_RESTORE_AVG_FILE_COMP_RATE, make_pair("2000000", 1)));
 	mValues.insert(make_pair("tw_wipe_cache", make_pair("0", 0)));
 	mValues.insert(make_pair("tw_wipe_dalvik", make_pair("0", 0)));
 	if (GetIntValue(TW_HAS_INTERNAL) == 1 && GetIntValue(TW_HAS_DATA_MEDIA) == 1 && GetIntValue(TW_HAS_EXTERNAL) == 0)
@@ -1017,6 +864,8 @@ void DataManager::SetDefaultValues()
 	mConstValues.insert(make_pair("tw_device_name", TARGET_DEVICE));
 
 	mValues.insert(make_pair(TW_AUTO_INJECT_MROM, make_pair("1", 1)));
+
+	pthread_mutex_unlock(&m_valuesLock);
 }
 
 // Magic Values
@@ -1050,13 +899,43 @@ int DataManager::GetMagicValue(const string varName, string& value)
 		value = tmp;
 		return 0;
 	}
+	else if (varName == "tw_cpu_temp")
+	{
+	   string cpu_temp_file;
+	   static unsigned long convert_temp = 0;
+	   static time_t cpuSecCheck = 0;
+	   int divisor = 0;
+	   struct timeval curTime;
+	   string results;
+
+	   gettimeofday(&curTime, NULL);
+	   if (curTime.tv_sec > cpuSecCheck)
+	   {
+#ifdef TW_CUSTOM_CPU_TEMP_PATH
+		   cpu_temp_file = EXPAND(TW_CUSTOM_CPU_TEMP_PATH);
+		   if (TWFunc::read_file(cpu_temp_file, results) != 0)
+			return -1;
+#else
+		   cpu_temp_file = "/sys/class/thermal/thermal_zone0/temp";
+		   if (TWFunc::read_file(cpu_temp_file, results) != 0)
+			return -1;
+#endif
+		   convert_temp = strtoul(results.c_str(), NULL, 0) / 1000;
+		   if (convert_temp <= 0)
+			convert_temp = strtoul(results.c_str(), NULL, 0);
+		   if (convert_temp >= 150)
+			convert_temp = strtoul(results.c_str(), NULL, 0) / 10;
+		   cpuSecCheck = curTime.tv_sec + 5;
+	   }
+	   value = TWFunc::to_string(convert_temp);
+	   return 0;
+	}
 	else if (varName == "tw_battery")
 	{
 		char tmp[16];
 		static char charging = ' ';
 		static int lastVal = -1;
 		static time_t nextSecCheck = 0;
-
 		struct timeval curTime;
 		gettimeofday(&curTime, NULL);
 		if (curTime.tv_sec > nextSecCheck)
@@ -1151,7 +1030,7 @@ void DataManager::ReadSettingsFile(void)
 
 	memset(mkdir_path, 0, sizeof(mkdir_path));
 	memset(settings_file, 0, sizeof(settings_file));
-	sprintf(mkdir_path, "%s/TWRP", DataManager_GetSettingsStoragePath());
+	sprintf(mkdir_path, "%s/TWRP", GetSettingsStoragePath().c_str());
 	sprintf(settings_file, "%s/.twrps", mkdir_path);
 
 	if (!PartitionManager.Mount_Settings_Storage(false))
@@ -1181,107 +1060,11 @@ string DataManager::GetCurrentStoragePath(void)
 	return GetStrValue("tw_storage_path");
 }
 
-string& DataManager::CGetCurrentStoragePath()
-{
-	return GetValueRef("tw_storage_path");
-}
-
 string DataManager::GetSettingsStoragePath(void)
 {
 	return GetStrValue("tw_settings_path");
 }
 
-string& DataManager::CGetSettingsStoragePath()
-{
-	return GetValueRef("tw_settings_path");
-}
-
-extern "C" int DataManager_ResetDefaults(void)
-{
-	return DataManager::ResetDefaults();
-}
-
-extern "C" void DataManager_LoadDefaults(void)
-{
-	return DataManager::SetDefaultValues();
-}
-
-extern "C" int DataManager_LoadValues(const char* filename)
-{
-	return DataManager::LoadValues(filename);
-}
-
-extern "C" int DataManager_Flush(void)
-{
-	return DataManager::Flush();
-}
-
-extern "C" int DataManager_GetValue(const char* varName, char* value)
-{
-	int ret;
-	string str;
-
-	ret = DataManager::GetValue(varName, str);
-	if (ret == 0)
-		strcpy(value, str.c_str());
-	return ret;
-}
-
-extern "C" const char* DataManager_GetStrValue(const char* varName)
-{
-	string& str = DataManager::GetValueRef(varName);
-	return str.c_str();
-}
-
-extern "C" const char* DataManager_GetCurrentStoragePath(void)
-{
-	string& str = DataManager::CGetCurrentStoragePath();
-	return str.c_str();
-}
-
-extern "C" const char* DataManager_GetSettingsStoragePath(void)
-{
-	string& str = DataManager::CGetSettingsStoragePath();
-	return str.c_str();
-}
-
-extern "C" int DataManager_GetIntValue(const char* varName)
-{
-	return DataManager::GetIntValue(varName);
-}
-
-extern "C" int DataManager_SetStrValue(const char* varName, char* value)
-{
-	return DataManager::SetValue(varName, value, 0);
-}
-
-extern "C" int DataManager_SetIntValue(const char* varName, int value)
-{
-	return DataManager::SetValue(varName, value, 0);
-}
-
-extern "C" int DataManager_SetFloatValue(const char* varName, float value)
-{
-	return DataManager::SetValue(varName, value, 0);
-}
-
-extern "C" int DataManager_ToggleIntValue(const char* varName)
-{
-	if (DataManager::GetIntValue(varName))
-		return DataManager::SetValue(varName, 0);
-	else
-		return DataManager::SetValue(varName, 1);
-}
-
-extern "C" void DataManager_DumpValues(void)
-{
-	return DataManager::DumpValues();
-}
-
-extern "C" void DataManager_ReadSettingsFile(void)
-{
-	return DataManager::ReadSettingsFile();
-}
 void DataManager::Vibrate(const string varName)
 {
 	int vib_value = 0;

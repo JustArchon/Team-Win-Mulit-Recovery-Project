@@ -181,6 +181,7 @@ GUISliderValue::GUISliderValue(xml_node<>* node) : GUIObject(node)
 		{
 			string parsevalue = gui_parse_text(attr->value());
 			mPadding = atoi(parsevalue.c_str());
+			mLinePadding = mPadding;
 		}
 
 		attr = child->first_attribute("sliderw");
@@ -198,7 +199,7 @@ GUISliderValue::GUISliderValue(xml_node<>* node) : GUIObject(node)
 		}
 	}
 
-	gr_getFontDetails(mFont ? mFont->GetResource() : NULL, (unsigned*) &mFontHeight, NULL);
+	mFontHeight = gr_getMaxFontHeight(mFont ? mFont->GetResource() : NULL);
 
 	if(mShowCurr)
 	{
@@ -208,7 +209,6 @@ GUISliderValue::GUISliderValue(xml_node<>* node) : GUIObject(node)
 
 	loadValue(true);
 
-	mLinePadding = mPadding;
 	if (mShowRange)
 	{
 		int textW = std::max(measureText(mMaxStr), measureText(mMinStr));

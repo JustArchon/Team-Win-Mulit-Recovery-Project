@@ -16,7 +16,11 @@ ifeq ($(TW_TARGET_USES_QCOM_BSP), true)
     LOCAL_ADDITIONAL_DEPENDENCIES := $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
     LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include
   else
-    LOCAL_C_INCLUDES += $(commands_recovery_local_path)/minuitwrp/include
+    ifeq ($(TARGET_CUSTOM_KERNEL_HEADERS),)
+      LOCAL_C_INCLUDES += $(commands_recovery_local_path)/minuitwrp/include
+    else
+      LOCAL_C_INCLUDES += $(TARGET_CUSTOM_KERNEL_HEADERS)
+    endif
   endif
 else
   LOCAL_C_INCLUDES += $(commands_recovery_local_path)/minuitwrp/include
@@ -81,6 +85,10 @@ ifeq ($(TW_IGNORE_MAJOR_AXIS_0), true)
 LOCAL_CFLAGS += -DTW_IGNORE_MAJOR_AXIS_0
 endif
 
+ifeq ($(TW_IGNORE_MT_POSITION_0), true)
+LOCAL_CFLAGS += -DTW_IGNORE_MT_POSITION_0
+endif
+
 ifneq ($(TW_INPUT_BLACKLIST),)
   LOCAL_CFLAGS += -DTW_INPUT_BLACKLIST=$(TW_INPUT_BLACKLIST)
 endif
@@ -107,12 +115,20 @@ ifneq ($(TW_WHITELIST_INPUT),)
   LOCAL_CFLAGS += -DWHITELIST_INPUT=$(TW_WHITELIST_INPUT)
 endif
 
+ifeq ($(TW_DISABLE_TTF), true)
+    LOCAL_CFLAGS += -DTW_DISABLE_TTF
+else
+    LOCAL_SHARED_LIBRARIES += libft2
+    LOCAL_C_INCLUDES += external/freetype/include
+    LOCAL_SRC_FILES += truetype.c
+endif
+
 ifneq ($(LANDSCAPE_RESOLUTION),)
   LOCAL_CFLAGS += -DTW_HAS_LANDSCAPE
 endif
 
-LOCAL_SHARED_LIBRARIES += libz libc libcutils libjpeg
-LOCAL_STATIC_LIBRARIES += libpng libpixelflinger_static
+LOCAL_SHARED_LIBRARIES += libz libc libcutils libjpeg libpng
+LOCAL_STATIC_LIBRARIES += libpixelflinger_static
 LOCAL_MODULE_TAGS := eng
 LOCAL_MODULE := libminuitwrp
 

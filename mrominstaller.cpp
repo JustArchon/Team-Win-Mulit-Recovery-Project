@@ -8,6 +8,7 @@
 #define statvfs statfs
 
 #include "mrominstaller.h"
+#include "minzip/SysUtil.h"
 #include "minzip/Zip.h"
 #include "common.h"
 #include "multirom.h"
@@ -44,19 +45,27 @@ std::string MROMInstaller::open(const std::string& file)
 	const ZipEntry *script_entry;
 	ZipArchive zip;
 
-	if (mzOpenZipArchive(file.c_str(), &zip) != 0)
+	MemMapping map;
+	if (sysMapFile(file.c_str(), &map) != 0) {
+		LOGERR("Failed to sysMapFile '%s'\n", file.c_str());
+		return false;
+	}
+
+	if (mzOpenZipArchive(map.addr, map.length, &zip) != 0)
 		return "Failed to open installer file!";
 
 	script_entry = mzFindZipEntry(&zip, "manifest.txt");
 	if(!script_entry)
 	{
 		mzCloseZipArchive(&zip);
+		sysReleaseMap(&map);
 		return "Failed to find manifest.txt";
 	}
 
 	int res = read_data(&zip, script_entry, &manifest, NULL);
 
 	mzCloseZipArchive(&zip);
+	sysReleaseMap(&map);
 
 	if(res < 0)
 		return "Failed to read manifest.txt!";
@@ -99,7 +108,7 @@ std::string MROMInstaller::open(const std::string& file)
 		if(itr == m_vals.end())
 			return std::string("Required key not found in manifest: ") + needed[i];
 	}
-	
+
 	m_file = file;
 	return std::string();
 }
@@ -244,7 +253,7 @@ std::string MROMInstaller::checkVersion() const
 		sprintf(cmd, "Required ver: %d, curr ver: %d", min_ver, ver);
 		return std::string(cmd);
 	}
-	
+
 	return std::string();
 }
 
@@ -289,9 +298,17 @@ std::string MROMInstaller::parseBaseFolders(bool ntfs)
 bool MROMInstaller::extractDir(const std::string& name, const std::string& dest)
 {
 	ZipArchive zip;
-	if (mzOpenZipArchive(m_file.c_str(), &zip) != 0)
+
+	MemMapping map;
+	if (sysMapFile(m_file.c_str(), &map) != 0) {
+		LOGERR("Failed to sysMapFile '%s'\n", m_file.c_str());
+		return false;
+	}
+
+	if (mzOpenZipArchive(map.addr, map.length, &zip) != 0)
 	{
 		gui_print("Failed to open ZIP file %s\n", m_file.c_str());
+		sysReleaseMap(&map);
 		return false;
 	}
 
@@ -300,6 +317,7 @@ bool MROMInstaller::extractDir(const std::string& name, const std::string& dest)
 	bool success = mzExtractRecursive(&zip, name.c_str(), dest.c_str(), MZ_EXTRACT_FILES_ONLY, &timestamp, NULL, NULL, NULL);
 
 	mzCloseZipArchive(&zip);
+	sysReleaseMap(&map);
 
 	if(!success)
 	{
@@ -312,9 +330,16 @@ bool MROMInstaller::extractDir(const std::string& name, const std::string& dest)
 bool MROMInstaller::extractFile(const std::string& name, const std::string& dest)
 {
 	ZipArchive zip;
-	if (mzOpenZipArchive(m_file.c_str(), &zip) != 0)
+	MemMapping map;
+	if (sysMapFile(m_file.c_str(), &map) != 0) {
+		LOGERR("Failed to sysMapFile '%s'\n", m_file.c_str());
+		return false;
+	}
+
+	if (mzOpenZipArchive(map.addr, map.length, &zip) != 0)
 	{
 		gui_print("Failed to open ZIP file %s\n", m_file.c_str());
+		sysReleaseMap(&map);
 		return false;
 	}
 
@@ -341,15 +366,23 @@ bool MROMInstaller::extractFile(const std::string& name, const std::string& dest
 	fclose(f);
 exit:
 	mzCloseZipArchive(&zip);
+	sysReleaseMap(&map);
 	return res;
 }
 
 bool MROMInstaller::hasEntry(const std::string& name)
 {
 	ZipArchive zip;
-	if (mzOpenZipArchive(m_file.c_str(), &zip) != 0)
+	MemMapping map;
+	if (sysMapFile(m_file.c_str(), &map) != 0) {
+		LOGERR("Failed to sysMapFile '%s'\n", m_file.c_str());
+		return false;
+	}
+
+	if (mzOpenZipArchive(map.addr, map.length, &zip) != 0)
 	{
 		gui_print("Failed to open ZIP file %s\n", m_file.c_str());
+		sysReleaseMap(&map);
 		return false;
 	}
 
@@ -359,6 +392,7 @@ bool MROMInstaller::hasEntry(const std::string& name)
 	const ZipEntry *entry2 = mzFindZipEntry(&zip, (name + "/").c_str());
 
 	mzCloseZipArchive(&zip);
+	sysReleaseMap(&map);
 
 	return entry1 || entry2;
 }
@@ -459,7 +493,7 @@ bool MROMInstaller::extractTarball(const std::string& base, const std::string& n
 		return false;
 
 	bool res = true;
-	
+
 	char cmd[256];
 	sprintf(cmd, "gnutar --numeric-owner --overwrite -C \"%s\" -xf /tmp/tarballs/rom.tar.gz", (base + "/" + name).c_str());
 	if(system(cmd) != 0)

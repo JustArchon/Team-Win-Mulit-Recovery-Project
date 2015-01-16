@@ -15,7 +15,7 @@
 	</include>
 
 	<resources>
-		<resource name="font" type="font" filename="Roboto-Regular-30" />
+		<resource name="font" type="font" filename="RobotoCondensed-Regular.ttf" size="30" fallback="Roboto-Regular-30" />
 		<resource name="base" type="image" filename="background.jpg" />
 		<resource name="main_button" type="image" filename="button" />
 		<resource name="file_icon" type="image" filename="file" />
@@ -194,6 +194,7 @@
 		<variable name="button_fill_half_height" value="80" />
 		<variable name="button_fill_quarter_height" value="60" />
 		<variable name="button_full_center_x" value="480" />
+		<variable name="flash_list_height" value="300" />
 		<variable name="backup_list_x" value="50" />
 		<variable name="backup_list_y" value="160" />
 		<variable name="backup_list_width" value="900" />
@@ -273,9 +274,18 @@
 			</object>
 
 			<object type="text" color="%text_color%">
+				<font resource="font" />
+				<placement x="1150" y="40" />
+				<conditions>
+					<condition var1="tw_no_cpu_temp" var2="0" />
+				</conditions>
+				<text>CPU: %tw_cpu_temp% C</text>
+			</object>
+
+			<object type="text" color="%text_color%">
 				<condition var1="tw_simulate_actions" var2="1" />
 				<font resource="font" />
-				<placement x="850" y="40" />
+				<placement x="750" y="40" />
 				<text>SIMULATING ACTIONS</text>
 			</object>
 

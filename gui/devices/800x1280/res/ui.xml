@@ -15,9 +15,9 @@
 	</include>
 
 	<resources>
-		<resource name="font" type="font" filename="Roboto-Condensed-30" />
-		<resource name="mediumfont" type="font" filename="Roboto-Condensed-30" />
-		<resource name="filelist" type="font" filename="Roboto-Condensed-30" />
+		<resource name="font" type="font" filename="RobotoCondensed-Regular.ttf" size="30" fallback="Roboto-Condensed-30" />
+		<resource name="mediumfont" type="font" filename="RobotoCondensed-Regular.ttf" size="30" fallback="Roboto-Condensed-30" />
+		<resource name="filelist" type="font" filename="RobotoCondensed-Regular.ttf" size="30" fallback="Roboto-Condensed-30" />
 		<resource name="top_bar" type="image" filename="top-bar.jpg" />
 		<resource name="main_button" type="image" filename="menu-button" />
 		<resource name="file_icon" type="image" filename="file" />
@@ -79,6 +79,7 @@
 		<variable name="row17_text_y" value="%row16_text_y%+%text_row_height%" />
 		<variable name="row18_text_y" value="%row17_text_y%+%text_row_height%" />
 		<variable name="zip_status_y" value="640" />
+		<variable name="flash_list_height" value="330" />
 		<variable name="tz_selected_y" value="160" />
 		<variable name="tz_set_y" value="955" />
 		<variable name="tz_current_y" value="1185" />
@@ -267,6 +268,15 @@
 					<condition var1="tw_battery" op="<" var2="101" />
 				</conditions>
 				<text>Battery: %tw_battery%</text>
+			</object>
+
+			<object type="text" color="%text_color%">
+				<font resource="font" />
+				<placement x="420" y="76" />
+				<conditions>
+					<condition var1="tw_no_cpu_temp" var2="0" />
+				</conditions>
+				<text>CPU: %tw_cpu_temp% C</text>
 			</object>
 
 			<object type="text" color="%text_fail_color%">
