@@ -347,6 +347,7 @@ LOCAL_ADDITIONAL_DEPENDENCIES := \
     flash_image \
     fix_permissions.sh \
     mke2fs.conf \
+    zip \
     pigz \
     teamwin \
     toolbox_symlinks \
