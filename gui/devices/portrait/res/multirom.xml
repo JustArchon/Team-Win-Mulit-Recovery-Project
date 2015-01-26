@@ -184,13 +184,13 @@
 
 			<object type="text" color="%text_color%">
 				<font resource="font" />
-				<placement x="%col1_x%" y="%row18_text_y%" />
+				<placement x="%col1_x%" y="%row17_text_y%" />
 				<text>Location: %tw_multirom_install_loc%</text>
 			</object>
 
 			<object type="button">
 				<highlight color="%highlight_color%" />
-				<placement x="%col4_medium_x%" y="%row17_text_y%" />
+				<placement x="%col4_medium_x%" y="%row16_text_y%" />
 				<font resource="font" color="%button_text_color%" />
 				<text>Change</text>
 				<image resource="medium_button" />
@@ -1039,10 +1039,10 @@
 					<condition var1="tw_multirom_auto_boot_trigger" var2="1" />
 					<condition var1="tw_multirom_delay" op=">" var2="1" />
 				</conditions>
-				<placement x="%col2_medium_x%" y="%row2_medium_y%" />
+				<placement x="%col2_medium_x%" y="%mrom_boot_delay_y%" />
 				<font resource="font" color="%button_text_color%" />
-				<text>-</text>
-				<image resource="medium_button" />
+				<text></text>
+				<image resource="minus_button" />
 				<actions>
 					<action function="addsubtract">tw_multirom_delay-1</action>
 					<action function="page">multirom_settings_autoboot</action>
@@ -1059,10 +1059,10 @@
 			<object type="button">
 				<highlight color="%highlight_color%" />
 				<condition var1="tw_multirom_auto_boot_trigger" var2="1" />
-				<placement x="%mrom_boot_delay_add_x%" y="%row2_medium_y%" />
+				<placement x="%mrom_boot_delay_add_x%" y="%mrom_boot_delay_y%" />
 				<font resource="font" color="%button_text_color%" />
-				<text>+</text>
-				<image resource="medium_button" />
+				<text></text>
+				<image resource="plus_button" />
 				<actions>
 					<action function="addsubtract">tw_multirom_delay+1</action>
 					<action function="page">multirom_settings_autoboot</action>
@@ -2439,21 +2439,21 @@
 			<object type="text" color="%text_success_color%">
 				<condition var1="tw_multirom_swap_type" var2="1" op="!=" />
 				<font resource="font" />
-				<placement x="%col1_x%" y="%row14_text_y%" />
+				<placement x="%col1_x%" y="%row16_text_y%" />
 				<text>New ROM's name:</text>
 			</object>
 
 			<object type="text" color="%text_color%">
 				<condition var1="tw_multirom_swap_type" var2="1" op="!=" />
 				<font resource="font" />
-				<placement x="%col1_x%" y="%row15_text_y%" />
+				<placement x="%col1_x%" y="%row17_text_y%" />
 				<text>%tw_multirom_swap_internal_name%</text>
 			</object>
 
 			<object type="button">
 				<condition var1="tw_multirom_swap_type" var2="1" op="!=" />
 				<highlight color="%highlight_color%" />
-				<placement x="%col4_medium_x%" y="%row14_text_y%" />
+				<placement x="%col4_medium_x%" y="%row16_text_y%" />
 				<font resource="font" color="%button_text_color%" />
 				<text>Change</text>
 				<image resource="medium_button" />

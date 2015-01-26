@@ -199,16 +199,17 @@
 
 		<variable name="mrom_inject_txt_x" value="612" />
 		<variable name="mrom_inject_txt_y" value="725" />
-		<variable name="mrom_wipe_col1_x" value="100" />
-		<variable name="mrom_wipe_col2_x" value="306" />
-		<variable name="mrom_wipe_col3_x" value="512" />
-		<variable name="mrom_boot_delay_sec_x" value="420" />
-		<variable name="mrom_boot_delay_add_x" value="470" />
+		<variable name="mrom_wipe_col1_x" value="70" />
+		<variable name="mrom_wipe_col2_x" value="206" />
+		<variable name="mrom_wipe_col3_x" value="343" />
+		<variable name="mrom_boot_delay_sec_x" value="240" />
+		<variable name="mrom_boot_delay_add_x" value="300" />
+		<variable name="mrom_boot_delay_y" value="210" />
 		<variable name="mrom_boot_rom_h" value="500" />
 		<variable name="mrom_ubuntu_desktop_x" value="200" />
 		<variable name="mrom_ubuntu_touch_x" value="500" />
-		<variable name="mrom_install_loc_h" value="460" />
-		<variable name="mrom_install_refresh_y" value="940" />
+		<variable name="mrom_install_loc_h" value="340" />
+		<variable name="mrom_install_refresh_y" value="750" />
 		<variable name="mrom_img1_text_y" value="400" />
 		<variable name="mrom_img2_text_y" value="520" />
 		<variable name="mrom_img3_text_y" value="640" />
@@ -219,7 +220,7 @@
 		<variable name="mrom_img3_btn_y" value="590" />
 		<variable name="mrom_img4_btn_y" value="710" />
 		<variable name="mrom_img5_btn_y" value="830" />
-		<variable name="mrom_rom_loc_list_h" value="660" />
+		<variable name="mrom_rom_loc_list_h" value="500" />
 		<variable name="mrom_swap_list_h" value="400" />
 	</variables>
 
