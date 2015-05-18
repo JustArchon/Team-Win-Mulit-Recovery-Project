@@ -853,6 +853,8 @@ void DataManager::SetDefaultValues()
 	mConstValues.insert(make_pair("tw_has_mtp", "0"));
 	mConstValues.insert(make_pair("tw_mtp_enabled", "0"));
 #endif
+	mValues.insert(make_pair("tw_mount_system_ro", make_pair("1", 1)));
+	mValues.insert(make_pair("tw_never_show_system_ro_page", make_pair("0", 1)));
 
 #if defined(TW_HAS_LANDSCAPE) && defined(TW_DEFAULT_ROTATION)
 	mValues.insert(make_pair(TW_ROTATION, make_pair(EXPAND(TW_DEFAULT_ROTATION), 1)));

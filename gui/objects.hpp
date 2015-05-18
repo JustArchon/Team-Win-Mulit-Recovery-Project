@@ -377,6 +377,8 @@ protected:
 	int stopmtp(std::string arg);
 	int flashimage(std::string arg);
 	int cancelbackup(std::string arg);
+	int checkpartitionlifetimewrites(std::string arg);
+	int mountsystemtoggle(std::string arg);
 
 	int multirom_delete(std::string arg);
 	int multirom_flash_zip(std::string arg);

@@ -204,6 +204,8 @@ GUIAction::GUIAction(xml_node<>* node)
 		ADD_ACTION(startmtp);
 		ADD_ACTION(stopmtp);
 		ADD_ACTION(cancelbackup);
+		ADD_ACTION(checkpartitionlifetimewrites);
+		ADD_ACTION(mountsystemtoggle);
 
 		ADD_ACTION(rotation);
 		ADD_ACTION(multirom);
@@ -248,6 +250,7 @@ GUIAction::GUIAction(xml_node<>* node)
 		ADD_ACTION(installsu);
 		ADD_ACTION(decrypt_backup);
 		ADD_ACTION(repair);
+		ADD_ACTION(resize);
 		ADD_ACTION(changefilesystem);
 		ADD_ACTION(flashimage);
 
@@ -896,6 +899,10 @@ int GUIAction::getpartitiondetails(std::string arg)
 					DataManager::SetValue("tw_partition_can_repair", 1);
 				else
 					DataManager::SetValue("tw_partition_can_repair", 0);
+				if (Part->Can_Resize())
+					DataManager::SetValue("tw_partition_can_resize", 1);
+				else
+					DataManager::SetValue("tw_partition_can_resize", 0);
 				if (TWFunc::Path_Exists("/sbin/mkdosfs"))
 					DataManager::SetValue("tw_partition_vfat", 1);
 				else
@@ -1023,15 +1030,19 @@ int GUIAction::flash(std::string arg)
 	// We're going to jump to this page first, like a loading page
 	gui_changePage(arg);
 	for (i=0; i<zip_queue_index; i++) {
+		string zip_path = zip_queue[i];
+		size_t slashpos = zip_path.find_last_of('/');
+		string zip_filename = (slashpos == string::npos) ? zip_path : zip_path.substr(slashpos + 1);
 		operation_start("Flashing");
-		DataManager::SetValue("tw_filename", zip_queue[i]);
+		DataManager::SetValue("tw_filename", zip_path);
+		DataManager::SetValue("tw_file", zip_filename);
 		DataManager::SetValue(TW_ZIP_INDEX, (i + 1));
 
 		TWFunc::SetPerformanceMode(true);
-		ret_val = flash_zip(zip_queue[i], &wipe_cache);
+		ret_val = flash_zip(zip_path, &wipe_cache);
 		TWFunc::SetPerformanceMode(false);
 		if (ret_val != 0) {
-			gui_print("Error flashing zip '%s'\n", zip_queue[i].c_str());
+			gui_print("Error flashing zip '%s'\n", zip_path.c_str());
 			ret_val = 1;
 			break;
 		}
@@ -1395,7 +1406,6 @@ int GUIAction::terminalcommand(std::string arg)
 					keep_going = 0;
 				} else {
 					// Try to read output
-					memset(line, 0, sizeof(line));
 					if(fgets(line, sizeof(line), fp) != NULL)
 						gui_print("%s", line); // Display output
 					else
@@ -1537,7 +1547,7 @@ int GUIAction::adbsideload(std::string arg)
 			LOGINFO("Waiting for child sideload process to exit.\n");
 			waitpid(sideload_child_pid, &status, 0);
 		}
-
+		property_set("ctl.start", "adbd");
 		TWFunc::Toggle_MTP(mtp_was_enabled);
 		reinject_after_flash();
 		operation_end(ret);
@@ -1571,6 +1581,8 @@ int GUIAction::adbsideloadcancel(std::string arg)
 
 int GUIAction::openrecoveryscript(std::string arg)
 {
+	int op_status = 1;
+
 	operation_start("OpenRecoveryScript");
 	if (simulate) {
 		simulate_progress_bar();
@@ -1591,6 +1603,7 @@ int GUIAction::openrecoveryscript(std::string arg)
 			gui_print("Processing OpenRecoveryScript file...\n");
 			if (OpenRecoveryScript::run_script_file() == 0) {
 				reboot = 1;
+				op_status = 0;
 			}
 		}
 
@@ -1599,11 +1612,11 @@ int GUIAction::openrecoveryscript(std::string arg)
 			TWFunc::Disable_Stock_Recovery_Replace();
 			usleep(2000000); // Sleep for 2 seconds before rebooting
 			TWFunc::tw_reboot(rb_system);
+			usleep(5000000); // Sleep for 5 seconds to allow reboot to occur
 		} else {
 			DataManager::SetValue("tw_page_done", 1);
 		}
-		operation_end(1);
-		return 0;
+		operation_end(op_status);
 	}
 	return 0;
 }
@@ -1678,6 +1691,28 @@ int GUIAction::repair(std::string arg)
 			op_status = 0; // success
 		} else {
 			LOGERR("Error repairing file system.\n");
+			op_status = 1; // fail
+		}
+	}
+
+	operation_end(op_status);
+	return 0;
+}
+
+int GUIAction::resize(std::string arg)
+{
+	int op_status = 0;
+
+	operation_start("Resize Partition");
+	if (simulate) {
+		simulate_progress_bar();
+	} else {
+		string part_path;
+		DataManager::GetValue("tw_partition_mount_point", part_path);
+		if (PartitionManager.Resize_By_Path(part_path, true)) {
+			op_status = 0; // success
+		} else {
+			LOGERR("Error resizing file system.\n");
 			op_status = 1; // fail
 		}
 	}
@@ -1773,6 +1808,58 @@ int GUIAction::getKeyByName(std::string key)
 	}
 
 	return atol(key.c_str());
+}
+
+int GUIAction::mountsystemtoggle(std::string arg)
+{
+	int op_status = 0;
+	bool remount_system = PartitionManager.Is_Mounted_By_Path("/system");
+
+	operation_start("Toggle System Mount");
+	if (!PartitionManager.UnMount_By_Path("/system", true)) {
+		op_status = 1; // fail
+	} else {
+		TWPartition* Part = PartitionManager.Find_Partition_By_Path("/system");
+		if (Part) {
+			if (arg == "0") {
+				DataManager::SetValue("tw_mount_system_ro", 0);
+				Part->Change_Mount_Read_Only(false);
+			} else {
+				DataManager::SetValue("tw_mount_system_ro", 1);
+				Part->Change_Mount_Read_Only(true);
+			}
+			if (remount_system) {
+				Part->Mount(true);
+			}
+			op_status = 0; // success
+		} else {
+			op_status = 1; // fail
+		}
+	}
+
+	operation_end(op_status);
+	return 0;
+}
+
+int GUIAction::checkpartitionlifetimewrites(std::string arg)
+{
+	int op_status = 0;
+	TWPartition* sys = PartitionManager.Find_Partition_By_Path(arg);
+
+	operation_start("Check Partition Lifetime Writes");
+	if (sys) {
+		if (sys->Check_Lifetime_Writes() != 0)
+			DataManager::SetValue("tw_lifetime_writes", 1);
+		else
+			DataManager::SetValue("tw_lifetime_writes", 0);
+		op_status = 0; // success
+	} else {
+		DataManager::SetValue("tw_lifetime_writes", 1);
+		op_status = 1; // fail
+	}
+
+	operation_end(op_status);
+	return 0;
 }
 
 int GUIAction::rotation(std::string arg)
@@ -2123,6 +2210,8 @@ int GUIAction::multirom_flash_zip(std::string arg)
 	std::string boot = MultiROM::getRomsPath() + name + "/boot.img";
 	int had_boot = access(boot.c_str(), F_OK) >= 0;
 
+	DataManager::SetValue("multirom_rom_name_title", 1);
+
 	if (!MultiROM::flashZip(name, DataManager::GetStrValue("tw_filename")))
 		op_status = 1;
 
@@ -2134,6 +2223,8 @@ int GUIAction::multirom_flash_zip(std::string arg)
 		if(!MultiROM::extractBootForROM(MultiROM::getRomsPath() + name))
 			op_status = 1;
 	}
+
+	DataManager::SetValue("multirom_rom_name_title", 0);
 
 	operation_end(op_status);
 	return op_status;
@@ -2258,6 +2349,7 @@ int GUIAction::multirom_rm_bootimg(std::string arg)
 	operation_start("working");
 	std::string cmd = "rm \"" + MultiROM::getRomsPath() + "/" + DataManager::GetStrValue("tw_multirom_rom_name") + "/boot.img\"";
 	int op_status = (system(cmd.c_str()) != 0);
+
 	operation_end(op_status);
 	return 0;
 }
@@ -2285,6 +2377,9 @@ int GUIAction::multirom_sideload(std::string arg)
 
 	operation_start("Sideload");
 	bool mtp_was_enabled = TWFunc::Toggle_MTP(false);
+
+	if(DataManager::GetStrValue("tw_back") == "multirom_manage")
+		DataManager::SetValue("multirom_rom_name_title", 1);
 
 	gui_print("Starting ADB sideload feature...\n");
 	ret = apply_from_adb("/", &sideload_child_pid);
@@ -2318,6 +2413,8 @@ int GUIAction::multirom_sideload(std::string arg)
 	TWFunc::Toggle_MTP(mtp_was_enabled);
 	reinject_after_flash();
 	operation_end(ret);
+
+	DataManager::SetValue("multirom_rom_name_title", 0);
 	return 0;
 }
 
@@ -2325,7 +2422,7 @@ int GUIAction::multirom_swap_calc_space(std::string arg)
 {
 	static const char *parts[] = { "/cache", "/system", "/data" };
 	TWPartition *p;
-	unsigned long long int_size = 0, int_data_size = 0, sec_data_size = 0;
+	unsigned long long int_size = 0, int_data_size = 0;
 	unsigned long long needed = 0, free = 0;
 
 	std::string swap_rom = DataManager::GetStrValue("tw_multirom_swap_rom");
@@ -2360,26 +2457,29 @@ int GUIAction::multirom_swap_calc_space(std::string arg)
 			int_data_size = p->GetSizeBackup();
 	}
 
-	if(type == MROM_SWAP_WITH_SECONDARY || type == MROM_SWAP_COPY_SECONDARY)
-		sec_data_size = du.Get_Folder_Size(MultiROM::getRomsPath() + swap_rom + "/data");
-
 	switch(type)
 	{
 		case MROM_SWAP_WITH_SECONDARY:
-			needed = int_size + sec_data_size;
+			needed = int_size + du.Get_Folder_Size(MultiROM::getRomsPath() + swap_rom + "/data");
 			break;
 		case MROM_SWAP_COPY_SECONDARY:
+		{
+			uint64_t sec_data_size = du.Get_Folder_Size(MultiROM::getRomsPath() + swap_rom + "/data");
 			if(sec_data_size > int_data_size)
 				needed = sec_data_size - int_data_size + 50*1024*1024;
 			break;
+		}
 		case MROM_SWAP_COPY_INTERNAL:
 		case MROM_SWAP_MOVE_INTERNAL:
-			needed = int_size;
+			needed = du.Get_Folder_Size(MultiROM::getRomsPath() + swap_rom + "/data");
+			break;
+		case MROM_SWAP_DUPLICATE:
+			needed = du.Get_Folder_Size(MultiROM::getRomsPath() + swap_rom);
 			break;
 	}
 
-	needed >>= 20; // divide by (1024*1024) to MB
-	free >>= 20;
+	needed /= 1024*1024;
+	free /= 1024*1024;
 	DataManager::SetValue("tw_multirom_swap_needed", needed);
 	DataManager::SetValue("tw_multirom_swap_free", free);
 
@@ -2458,6 +2558,14 @@ int GUIAction::multirom_execute_swap(std::string arg)
 			res = 0;
 			break;
 		}
+		case MROM_SWAP_DUPLICATE:
+		{
+			std::string src_rom = DataManager::GetStrValue("tw_multirom_swap_rom");
+			if(!MultiROM::duplicateSecondary(src_rom, int_target))
+				break;
+			res = 0;
+			break;
+		}
 	}
 
 	PartitionManager.Update_System_Details();
@@ -2526,5 +2634,6 @@ int GUIAction::system_image_upgrader(std::string arg)
 
 	DataManager::SetValue("tw_page_done", 1);
 	operation_end(res);
+
 	return 0;
 }
